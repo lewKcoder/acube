@@ -146,13 +146,29 @@ where
 }
 
 /// Build a structured 400 response from validation errors.
+///
+/// Only field names are exposed to the client. Detailed error messages
+/// (constraint values, received values) are logged server-side only.
 fn validation_error_response(request_id: &str, errors: Vec<ValidationError>) -> Response {
+    // Log detailed errors server-side for debugging
+    for err in &errors {
+        tracing::warn!(
+            request_id = %request_id,
+            field = %err.field,
+            code = %err.code,
+            message = %err.message,
+            "validation failed"
+        );
+    }
+
+    // Client receives only field names — no constraint details leaked
+    let fields: Vec<&str> = errors.iter().map(|e| e.field.as_str()).collect();
     error_response(
         StatusCode::BAD_REQUEST,
         "validation_error",
         "Validation failed",
         request_id,
         false,
-        Some(serde_json::to_value(&errors).unwrap_or_default()),
+        Some(serde_json::to_value(&fields).unwrap_or_default()),
     )
 }

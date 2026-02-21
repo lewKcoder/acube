@@ -194,6 +194,17 @@ impl Service {
     pub fn into_router(self) -> Router {
         let mut router = Router::new();
 
+        // Audit log: warn about endpoints with no authentication
+        for ep in &self.endpoints {
+            if matches!(ep.security, EndpointSecurity::None) {
+                tracing::warn!(
+                    method = %ep.method,
+                    path = %ep.path,
+                    "endpoint has no authentication (explicitly declared with #[a3_security(none)])"
+                );
+            }
+        }
+
         // Group endpoints by path to avoid axum's duplicate-route panic
         let mut route_map: HashMap<String, Option<axum::routing::MethodRouter>> = HashMap::new();
 

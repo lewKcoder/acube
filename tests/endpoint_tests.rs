@@ -178,7 +178,7 @@ async fn auth_endpoint_with_token_returns_201() {
 }
 
 #[tokio::test]
-async fn validation_error_returns_400_with_details() {
+async fn validation_error_returns_400_with_field_names_only() {
     let router = build_service().into_router();
     let req = Request::builder()
         .method("POST")
@@ -194,13 +194,11 @@ async fn validation_error_returns_400_with_details() {
     assert_eq!(json["error"]["code"], "validation_error");
     assert_eq!(json["error"]["message"], "Validation failed");
 
+    // Details should contain only field names (strings), not full error objects
     let details = json["error"]["details"].as_array().unwrap();
     assert!(details.len() >= 2);
 
-    let fields: Vec<&str> = details
-        .iter()
-        .map(|d| d["field"].as_str().unwrap())
-        .collect();
+    let fields: Vec<&str> = details.iter().map(|d| d.as_str().unwrap()).collect();
     assert!(fields.contains(&"name"));
     assert!(fields.contains(&"email"));
 }
@@ -223,10 +221,10 @@ async fn unknown_fields_rejected_strict_mode() {
     let json = body_json(resp).await;
     assert_eq!(json["error"]["code"], "validation_error");
 
+    // Details should contain only field names — "evil" is the unknown field
     let details = json["error"]["details"].as_array().unwrap();
-    assert!(details
-        .iter()
-        .any(|d| d["field"] == "evil" && d["code"] == "unknown_field"));
+    let fields: Vec<&str> = details.iter().map(|d| d.as_str().unwrap()).collect();
+    assert!(fields.contains(&"evil"));
 }
 
 #[tokio::test]
