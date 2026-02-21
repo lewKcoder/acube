@@ -81,16 +81,28 @@ where
             .map(|r| r.0.clone())
             .unwrap_or_else(|| Uuid::new_v4().to_string());
 
-        // Extract body as bytes
-        let bytes = Bytes::from_request(req, state).await.map_err(|_| {
-            error_response(
-                StatusCode::BAD_REQUEST,
-                "invalid_body",
-                "Failed to read request body",
-                &request_id,
-                false,
-                None,
-            )
+        // Extract body as bytes (handles payload too large from RequestBodyLimitLayer)
+        let bytes = Bytes::from_request(req, state).await.map_err(|e| {
+            let status = e.status();
+            if status == StatusCode::PAYLOAD_TOO_LARGE {
+                error_response(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    "payload_too_large",
+                    "Request body too large",
+                    &request_id,
+                    false,
+                    None,
+                )
+            } else {
+                error_response(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_body",
+                    "Failed to read request body",
+                    &request_id,
+                    false,
+                    None,
+                )
+            }
         })?;
 
         // Parse as JSON Value first (for strict mode check)

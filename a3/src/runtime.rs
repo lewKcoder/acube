@@ -1,5 +1,14 @@
 //! Service builder and runtime for the a³ framework.
+//!
+//! Pipeline stages (6段):
+//! ① Route Resolution
+//! ② Security (ヘッダー注入 + レート制限 + ペイロード制限)
+//! ③ Auth (認証 + スコープ検証)
+//! ④ Input (バリデーション + サニタイズ) — handled by `Valid<T>` extractor
+//! ⑤ Handler Execution
+//! ⑥ Response (エラー整形 + レスポンス構築)
 
+use axum::body::Body;
 use axum::extract::Request;
 use axum::http::{HeaderName, HeaderValue, StatusCode};
 use axum::middleware::{self, Next};
@@ -13,6 +22,8 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use tower::Layer;
+use tower_http::catch_panic::CatchPanicLayer;
+use tower_http::limit::RequestBodyLimitLayer;
 use uuid::Uuid;
 
 use crate::error::error_response;
@@ -20,6 +31,9 @@ use crate::extract::RequestId;
 use crate::rate_limit::{InMemoryBackend, RateLimitBackend};
 use crate::security::AuthProvider;
 use crate::types::{EndpointSecurity, HttpMethod, RateLimitConfig};
+
+/// Default payload size limit (1 MB).
+const DEFAULT_PAYLOAD_LIMIT: usize = 1024 * 1024;
 
 /// An a³ endpoint registration.
 pub struct EndpointRegistration {
@@ -42,6 +56,7 @@ pub struct ServiceBuilder {
     endpoints: Vec<EndpointRegistration>,
     auth_provider: Option<Arc<dyn AuthProvider>>,
     rate_limit_backend: Option<Arc<dyn RateLimitBackend>>,
+    payload_limit: usize,
 }
 
 impl ServiceBuilder {
@@ -52,6 +67,7 @@ impl ServiceBuilder {
             endpoints: Vec::new(),
             auth_provider: None,
             rate_limit_backend: None,
+            payload_limit: DEFAULT_PAYLOAD_LIMIT,
         }
     }
 
@@ -82,6 +98,12 @@ impl ServiceBuilder {
     /// Set the rate limit backend.
     pub fn rate_limit_backend<B: RateLimitBackend>(mut self, backend: B) -> Self {
         self.rate_limit_backend = Some(Arc::new(backend));
+        self
+    }
+
+    /// Set the maximum request body size in bytes (default: 1 MB).
+    pub fn payload_limit(mut self, bytes: usize) -> Self {
+        self.payload_limit = bytes;
         self
     }
 
@@ -120,6 +142,7 @@ impl ServiceBuilder {
             endpoints: self.endpoints,
             auth_provider: self.auth_provider,
             rate_limiter,
+            payload_limit: self.payload_limit,
         })
     }
 }
@@ -144,6 +167,7 @@ pub struct Service {
     endpoints: Vec<EndpointRegistration>,
     auth_provider: Option<Arc<dyn AuthProvider>>,
     rate_limiter: Arc<dyn RateLimitBackend>,
+    payload_limit: usize,
 }
 
 impl Service {
@@ -172,11 +196,12 @@ impl Service {
                 });
             }
 
-            // Auth layer for JWT endpoints
-            if let EndpointSecurity::Jwt { .. } = &ep.security {
+            // Auth layer for JWT endpoints (with scope verification)
+            if let EndpointSecurity::Jwt { scopes } = &ep.security {
                 if let Some(ref provider) = self.auth_provider {
                     handler = handler.layer(JwtAuthLayer {
                         provider: provider.clone(),
+                        required_scopes: scopes.clone(),
                     });
                 }
             }
@@ -209,10 +234,19 @@ impl Service {
         };
         router = router.fallback(fallback_handler);
 
-        // Add security headers middleware
+        // Layers are applied in reverse order: last added = outermost.
+        // Request flow: request_id → body_limit → security_headers → catch_panic → handler
+
+        // Panic handler (innermost — catches panics, response flows through outer layers)
+        router = router.layer(CatchPanicLayer::custom(panic_handler));
+
+        // ⑥ Response: security headers middleware
         router = router.layer(middleware::from_fn(security_headers_middleware));
 
-        // Add request ID middleware
+        // ② Security: payload size limit
+        router = router.layer(RequestBodyLimitLayer::new(self.payload_limit));
+
+        // ① Route Resolution: request ID middleware (outermost — runs first)
         router = router.layer(middleware::from_fn(request_id_middleware));
 
         router
@@ -287,6 +321,7 @@ async fn security_headers_middleware(req: Request, next: Next) -> Response {
 #[derive(Clone)]
 struct JwtAuthLayer {
     provider: Arc<dyn AuthProvider>,
+    required_scopes: Vec<String>,
 }
 
 impl<S> Layer<S> for JwtAuthLayer {
@@ -295,6 +330,7 @@ impl<S> Layer<S> for JwtAuthLayer {
         JwtAuthService {
             inner,
             provider: self.provider.clone(),
+            required_scopes: self.required_scopes.clone(),
         }
     }
 }
@@ -303,6 +339,7 @@ impl<S> Layer<S> for JwtAuthLayer {
 struct JwtAuthService<S> {
     inner: S,
     provider: Arc<dyn AuthProvider>,
+    required_scopes: Vec<String>,
 }
 
 impl<S> tower::Service<Request> for JwtAuthService<S>
@@ -322,28 +359,46 @@ where
         let clone = self.inner.clone();
         let mut inner = std::mem::replace(&mut self.inner, clone);
         let provider = self.provider.clone();
+        let required_scopes = self.required_scopes.clone();
 
         Box::pin(async move {
+            let request_id = req
+                .extensions()
+                .get::<RequestId>()
+                .map(|r| r.0.clone())
+                .unwrap_or_else(|| Uuid::new_v4().to_string());
+
             match provider.authenticate(&req) {
                 Ok(identity) => {
+                    // ③ Scope verification: check required scopes
+                    if !required_scopes.is_empty() {
+                        let has_wildcard = identity.scopes.iter().any(|s| s == "*");
+                        if !has_wildcard {
+                            for scope in &required_scopes {
+                                if !identity.scopes.contains(scope) {
+                                    return Ok(error_response(
+                                        StatusCode::FORBIDDEN,
+                                        "insufficient_scopes",
+                                        "Insufficient scopes",
+                                        &request_id,
+                                        false,
+                                        None,
+                                    ));
+                                }
+                            }
+                        }
+                    }
                     req.extensions_mut().insert(identity);
                     inner.call(req).await
                 }
-                Err(_) => {
-                    let request_id = req
-                        .extensions()
-                        .get::<RequestId>()
-                        .map(|r| r.0.clone())
-                        .unwrap_or_else(|| Uuid::new_v4().to_string());
-                    Ok(error_response(
-                        StatusCode::UNAUTHORIZED,
-                        "unauthorized",
-                        "Unauthorized",
-                        &request_id,
-                        false,
-                        None,
-                    ))
-                }
+                Err(_) => Ok(error_response(
+                    StatusCode::UNAUTHORIZED,
+                    "unauthorized",
+                    "Unauthorized",
+                    &request_id,
+                    false,
+                    None,
+                )),
             }
         })
     }
@@ -426,6 +481,24 @@ where
         })
     }
 }
+
+// ─── Panic Handler ───────────────────────────────────────────────────────────
+
+/// Handle panics from handlers by returning a structured 500 JSON response.
+fn panic_handler(_err: Box<dyn std::any::Any + Send + 'static>) -> Response<Body> {
+    let request_id = Uuid::new_v4().to_string();
+    tracing::error!(request_id = %request_id, "handler panicked");
+    error_response(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "internal_error",
+        "Internal server error",
+        &request_id,
+        false,
+        None,
+    )
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /// Extract a rate limit key from the request (client IP or fallback).
 fn get_rate_limit_key(req: &Request) -> String {
