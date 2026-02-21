@@ -1,0 +1,15 @@
+/target
+node_modules/
+dist/
+.next/
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.local
+.turbo/
+coverage/
+*.log
+.claude
+*.local.json
+*.local.js

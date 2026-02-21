@@ -1,0 +1,5 @@
+error: A3Schema only supports named fields
+ --> $WORKSPACE/tests/compile_fail/schema_on_tuple_struct.rs
+  |
+  | pub struct TupleStruct(String, i32);
+  |            ^^^^^^^^^^^

@@ -1,0 +1,53 @@
+[package]
+name = "a3"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+a3-macros = { path = "../a3-macros" }
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["set-header", "trace"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+regex = "1"
+chrono = { version = "0.4", features = ["serde"] }
+dashmap = "5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+thiserror = "1"
+secrecy = "0.8"
+http = "1"
+
+[[example]]
+name = "hello"
+path = "../examples/hello.rs"
+
+[[example]]
+name = "user_service"
+path = "../examples/user_service.rs"
+
+[[test]]
+name = "integration_tests"
+path = "../tests/integration_tests.rs"
+
+[[test]]
+name = "schema_tests"
+path = "../tests/schema_tests.rs"
+
+[[test]]
+name = "schema_compile_tests"
+path = "../tests/schema_compile_tests.rs"
+
+[[test]]
+name = "schema_proptest"
+path = "../tests/schema_proptest.rs"
+
+[dev-dependencies]
+hyper = { version = "1", features = ["full"] }
+tower = { version = "0.4", features = ["util"] }
+trybuild = "1"
+proptest = "1"
