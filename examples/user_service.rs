@@ -148,6 +148,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .endpoint(delete_user())
         .endpoint(health_check())
         .auth(JwtAuth::from_env()?)
+        .cors_allow_origins(&["http://localhost:3001"])
         .build()?;
 
     // Convert to router and add shared state

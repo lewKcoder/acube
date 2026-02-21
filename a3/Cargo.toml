@@ -10,7 +10,8 @@ async-trait = "0.1"
 axum = "0.7"
 tokio = { version = "1", features = ["full"] }
 tower = "0.4"
-tower-http = { version = "0.5", features = ["set-header", "trace", "limit", "catch-panic"] }
+tower-http = { version = "0.5", features = ["set-header", "trace", "limit", "catch-panic", "cors"] }
+jsonwebtoken = "9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4"] }
@@ -63,8 +64,13 @@ path = "../tests/endpoint_compile_tests.rs"
 name = "pipeline_tests"
 path = "../tests/pipeline_tests.rs"
 
+[[test]]
+name = "phase5_tests"
+path = "../tests/phase5_tests.rs"
+
 [dev-dependencies]
 hyper = { version = "1", features = ["full"] }
 tower = { version = "0.4", features = ["util"] }
 trybuild = "1"
 proptest = "1"
+jsonwebtoken = "9"

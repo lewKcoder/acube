@@ -23,6 +23,7 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 use tower::Layer;
 use tower_http::catch_panic::CatchPanicLayer;
+use tower_http::cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
 use uuid::Uuid;
 
@@ -57,6 +58,7 @@ pub struct ServiceBuilder {
     auth_provider: Option<Arc<dyn AuthProvider>>,
     rate_limit_backend: Option<Arc<dyn RateLimitBackend>>,
     payload_limit: usize,
+    cors_origins: Vec<String>,
 }
 
 impl ServiceBuilder {
@@ -68,6 +70,7 @@ impl ServiceBuilder {
             auth_provider: None,
             rate_limit_backend: None,
             payload_limit: DEFAULT_PAYLOAD_LIMIT,
+            cors_origins: Vec::new(),
         }
     }
 
@@ -107,6 +110,15 @@ impl ServiceBuilder {
         self
     }
 
+    /// Set allowed CORS origins.
+    ///
+    /// By default, no origins are allowed (all cross-origin requests denied).
+    /// Call this to explicitly allow specific origins.
+    pub fn cors_allow_origins(mut self, origins: &[&str]) -> Self {
+        self.cors_origins = origins.iter().map(|s| s.to_string()).collect();
+        self
+    }
+
     /// Build the service, performing startup contract validation.
     pub fn build(self) -> Result<Service, ServiceBuildError> {
         let name = self.name.ok_or(ServiceBuildError::MissingField("name"))?;
@@ -143,6 +155,7 @@ impl ServiceBuilder {
             auth_provider: self.auth_provider,
             rate_limiter,
             payload_limit: self.payload_limit,
+            cors_origins: self.cors_origins,
         })
     }
 }
@@ -168,6 +181,7 @@ pub struct Service {
     auth_provider: Option<Arc<dyn AuthProvider>>,
     rate_limiter: Arc<dyn RateLimitBackend>,
     payload_limit: usize,
+    cors_origins: Vec<String>,
 }
 
 impl Service {
@@ -235,7 +249,7 @@ impl Service {
         router = router.fallback(fallback_handler);
 
         // Layers are applied in reverse order: last added = outermost.
-        // Request flow: request_id → body_limit → security_headers → catch_panic → handler
+        // Request flow: cors → request_id → body_limit → security_headers → catch_panic → handler
 
         // Panic handler (innermost — catches panics, response flows through outer layers)
         router = router.layer(CatchPanicLayer::custom(panic_handler));
@@ -246,8 +260,47 @@ impl Service {
         // ② Security: payload size limit
         router = router.layer(RequestBodyLimitLayer::new(self.payload_limit));
 
-        // ① Route Resolution: request ID middleware (outermost — runs first)
+        // ① Route Resolution: request ID middleware
         router = router.layer(middleware::from_fn(request_id_middleware));
+
+        // CORS layer (outermost — handles preflight OPTIONS before any other processing)
+        let cors = if self.cors_origins.is_empty() {
+            // Safe default: deny all cross-origin requests
+            CorsLayer::new()
+                .allow_origin(AllowOrigin::list(std::iter::empty::<HeaderValue>()))
+                .allow_methods(AllowMethods::list([
+                    axum::http::Method::GET,
+                    axum::http::Method::POST,
+                    axum::http::Method::PUT,
+                    axum::http::Method::PATCH,
+                    axum::http::Method::DELETE,
+                ]))
+                .allow_headers(AllowHeaders::list([
+                    axum::http::header::CONTENT_TYPE,
+                    axum::http::header::AUTHORIZATION,
+                ]))
+        } else {
+            // Explicit origin whitelist
+            let origins: Vec<HeaderValue> = self
+                .cors_origins
+                .iter()
+                .filter_map(|o| o.parse().ok())
+                .collect();
+            CorsLayer::new()
+                .allow_origin(AllowOrigin::list(origins))
+                .allow_methods(AllowMethods::list([
+                    axum::http::Method::GET,
+                    axum::http::Method::POST,
+                    axum::http::Method::PUT,
+                    axum::http::Method::PATCH,
+                    axum::http::Method::DELETE,
+                ]))
+                .allow_headers(AllowHeaders::list([
+                    axum::http::header::CONTENT_TYPE,
+                    axum::http::header::AUTHORIZATION,
+                ]))
+        };
+        router = router.layer(cors);
 
         router
     }

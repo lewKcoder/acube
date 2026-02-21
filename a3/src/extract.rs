@@ -125,10 +125,11 @@ where
 
         // Deserialize to the target type
         let mut input: T = serde_json::from_value(value).map_err(|e| {
+            tracing::debug!(request_id = %request_id, error = %e, "deserialization failed");
             error_response(
                 StatusCode::BAD_REQUEST,
                 "deserialization_error",
-                &format!("Failed to deserialize input: {}", e),
+                "Invalid request body",
                 &request_id,
                 false,
                 None,

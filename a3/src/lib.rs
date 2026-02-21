@@ -23,7 +23,7 @@ pub mod prelude {
     pub use crate::rate_limit::{InMemoryBackend, RateLimitBackend};
     pub use crate::runtime::{EndpointRegistration, Service};
     pub use crate::schema::{A3SchemaInfo, A3Validate, ValidationError};
-    pub use crate::security::{AuthIdentity, AuthProvider, JwtAuth};
+    pub use crate::security::{AuthIdentity, AuthProvider, JwtAuth, JwtClaims};
     pub use crate::types::*;
 
     pub use axum::extract::Json;
