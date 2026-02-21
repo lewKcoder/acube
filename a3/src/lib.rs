@@ -9,6 +9,7 @@
 //! 3. **Rust の慣習に従う** — derive macro, trait, Result, Option。独自構文は最小限
 
 pub mod error;
+pub mod extract;
 pub mod rate_limit;
 pub mod runtime;
 pub mod schema;
@@ -18,6 +19,7 @@ pub mod types;
 /// Prelude for convenient imports.
 pub mod prelude {
     pub use crate::error::{A3ErrorInfo, A3FrameworkError};
+    pub use crate::extract::{A3Context, Valid};
     pub use crate::rate_limit::{InMemoryBackend, RateLimitBackend};
     pub use crate::runtime::{EndpointRegistration, Service};
     pub use crate::schema::{A3SchemaInfo, A3Validate, ValidationError};
@@ -29,8 +31,7 @@ pub mod prelude {
     pub use axum::response::IntoResponse;
     pub use serde::{Deserialize, Serialize};
 
-    // Re-export macros (stubs for now)
-    pub use a3_macros::{A3Error, A3Schema};
+    pub use a3_macros::{a3_endpoint, A3Error, A3Schema};
 }
 
 /// Initialize structured tracing (logging).

@@ -13,6 +13,8 @@ fn build_test_service() -> a3::runtime::Service {
             method: HttpMethod::Get,
             path: "/health".to_string(),
             handler: axum::routing::get(health_handler),
+            security: EndpointSecurity::None,
+            rate_limit: None,
         })
         .build()
         .expect("failed to build service")
@@ -207,11 +209,15 @@ async fn service_builder_rejects_duplicate_endpoints() {
             method: HttpMethod::Get,
             path: "/test".to_string(),
             handler: axum::routing::get(health_handler),
+            security: EndpointSecurity::None,
+            rate_limit: None,
         })
         .endpoint(EndpointRegistration {
             method: HttpMethod::Get,
             path: "/test".to_string(),
             handler: axum::routing::get(health_handler),
+            security: EndpointSecurity::None,
+            rate_limit: None,
         })
         .build();
     assert!(result.is_err());

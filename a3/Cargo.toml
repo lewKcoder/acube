@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 a3-macros = { path = "../a3-macros" }
+async-trait = "0.1"
 axum = "0.7"
 tokio = { version = "1", features = ["full"] }
 tower = "0.4"
@@ -49,6 +50,14 @@ path = "../tests/schema_compile_tests.rs"
 [[test]]
 name = "schema_proptest"
 path = "../tests/schema_proptest.rs"
+
+[[test]]
+name = "endpoint_tests"
+path = "../tests/endpoint_tests.rs"
+
+[[test]]
+name = "endpoint_compile_tests"
+path = "../tests/endpoint_compile_tests.rs"
 
 [dev-dependencies]
 hyper = { version = "1", features = ["full"] }

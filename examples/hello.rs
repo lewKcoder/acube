@@ -5,6 +5,13 @@
 
 use a3::prelude::*;
 
+#[a3_endpoint(GET "/health")]
+#[a3_security(none)]
+#[a3_rate_limit(none)]
+async fn health_check(_ctx: A3Context) -> A3Result<Json<HealthStatus>, Never> {
+    Ok(Json(HealthStatus::ok("0.1.0")))
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     a3::init_tracing();
@@ -12,16 +19,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let service = Service::builder()
         .name("hello-service")
         .version("0.1.0")
-        .endpoint(EndpointRegistration {
-            method: HttpMethod::Get,
-            path: "/health".to_string(),
-            handler: axum::routing::get(health_handler),
-        })
+        .endpoint(health_check())
         .build()?;
 
     a3::serve(service, "0.0.0.0:3000").await
-}
-
-async fn health_handler() -> impl IntoResponse {
-    Json(HealthStatus::ok("0.1.0"))
 }
