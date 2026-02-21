@@ -39,6 +39,10 @@ name = "schema_tests"
 path = "../tests/schema_tests.rs"
 
 [[test]]
+name = "error_tests"
+path = "../tests/error_tests.rs"
+
+[[test]]
 name = "schema_compile_tests"
 path = "../tests/schema_compile_tests.rs"
 

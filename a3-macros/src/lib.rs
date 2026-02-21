@@ -5,6 +5,7 @@
 use proc_macro::TokenStream;
 use syn::{parse_macro_input, DeriveInput};
 
+mod error;
 mod schema;
 
 /// Derive macro for input/output schema validation.
@@ -44,9 +45,31 @@ pub fn derive_a3_schema(input: TokenStream) -> TokenStream {
 
 /// Derive macro for structured error responses.
 ///
-/// Generates `impl IntoResponse` and `impl A3ErrorInfo` for the annotated enum.
+/// Generates `impl A3ErrorInfo` and `impl IntoResponse` for the annotated enum.
+///
+/// # Supported attributes
+///
+/// - `#[a3(status = NNN)]` — HTTP status code (required)
+/// - `#[a3(message = "...")]` — Error message safe to expose to clients (required)
+/// - `#[a3(retryable)]` — Mark this error as retryable
+///
+/// # Example
+///
+/// ```ignore
+/// #[derive(A3Error, Debug)]
+/// pub enum UserError {
+///     #[a3(status = 404, message = "User not found")]
+///     NotFound,
+///
+///     #[a3(status = 409, message = "Username already taken")]
+///     UsernameTaken,
+///
+///     #[a3(status = 502, retryable, message = "Database unavailable")]
+///     DbError,
+/// }
+/// ```
 #[proc_macro_derive(A3Error, attributes(a3))]
-pub fn derive_a3_error(_input: TokenStream) -> TokenStream {
-    // Phase 1b で実装
-    TokenStream::new()
+pub fn derive_a3_error(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    error::expand(&input).into()
 }

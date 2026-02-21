@@ -1,0 +1,5 @@
+error: A3Error variant `MissingStatus` requires #[a3(status = NNN)]
+ --> $WORKSPACE/tests/compile_fail/error_missing_status.rs
+  |
+  |     MissingStatus,
+  |     ^^^^^^^^^^^^^
