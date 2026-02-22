@@ -13,3 +13,11 @@ coverage/
 .claude
 *.local.json
 *.local.js
+
+# Benchmark artifacts
+**/target/
+__pycache__/
+*.pyc
+package-lock.json
+Cargo.lock
+CLAUDE_CODE_HANDOFF.md
