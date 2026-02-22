@@ -26,13 +26,26 @@ impl std::fmt::Display for HttpMethod {
     }
 }
 
-/// Security requirement for an endpoint.
+/// Security requirement for an endpoint (authentication).
 #[derive(Debug, Clone)]
 pub enum EndpointSecurity {
     /// No authentication required (explicitly declared via `#[a3_security(none)]`).
     None,
     /// JWT bearer token authentication.
-    Jwt { scopes: Vec<String> },
+    Jwt,
+}
+
+/// Authorization policy for an endpoint.
+#[derive(Debug, Clone)]
+pub enum EndpointAuthorization {
+    /// No authorization required (public endpoint).
+    Public,
+    /// Requires a valid authenticated identity (no specific scopes/role).
+    Authenticated,
+    /// Requires specific scopes.
+    Scopes(Vec<String>),
+    /// Requires a specific role.
+    Role(String),
 }
 
 /// Rate limit configuration for an endpoint.

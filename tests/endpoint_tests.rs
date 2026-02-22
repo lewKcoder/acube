@@ -31,6 +31,7 @@ impl AuthProvider for TestAuth {
         Ok(AuthIdentity {
             subject: "test-user".to_string(),
             scopes: vec!["users:create".to_string(), "users:read".to_string()],
+            role: None,
         })
     }
 }
@@ -66,13 +67,15 @@ enum TestError {
 
 #[a3_endpoint(GET "/health")]
 #[a3_security(none)]
+#[a3_authorize(public)]
 #[a3_rate_limit(none)]
 async fn test_health(_ctx: A3Context) -> A3Result<Json<HealthStatus>, Never> {
     Ok(Json(HealthStatus::ok("test")))
 }
 
 #[a3_endpoint(POST "/items")]
-#[a3_security(jwt, scopes = ["users:create"])]
+#[a3_security(jwt)]
+#[a3_authorize(scopes = ["users:create"])]
 async fn create_item(
     _ctx: A3Context,
     input: Valid<TestInput>,
@@ -85,7 +88,8 @@ async fn create_item(
 }
 
 #[a3_endpoint(GET "/items/:id")]
-#[a3_security(jwt, scopes = ["users:read"])]
+#[a3_security(jwt)]
+#[a3_authorize(scopes = ["users:read"])]
 #[a3_rate_limit(none)]
 async fn get_item(
     _ctx: A3Context,
@@ -99,6 +103,7 @@ async fn get_item(
 
 #[a3_endpoint(GET "/fail")]
 #[a3_security(none)]
+#[a3_authorize(public)]
 #[a3_rate_limit(none)]
 async fn fail_endpoint(_ctx: A3Context) -> A3Result<Json<serde_json::Value>, TestError> {
     Err(TestError::BackendError)
@@ -447,9 +452,8 @@ async fn builder_rejects_jwt_endpoint_without_auth_provider() {
             method: HttpMethod::Post,
             path: "/test".to_string(),
             handler: axum::routing::post(|| async { "ok" }),
-            security: EndpointSecurity::Jwt {
-                scopes: vec!["test".to_string()],
-            },
+            security: EndpointSecurity::Jwt,
+            authorization: EndpointAuthorization::Scopes(vec!["test".to_string()]),
             rate_limit: None,
             openapi: None,
         })
@@ -471,9 +475,8 @@ async fn builder_accepts_jwt_endpoint_with_auth_provider() {
             method: HttpMethod::Post,
             path: "/test".to_string(),
             handler: axum::routing::post(|| async { "ok" }),
-            security: EndpointSecurity::Jwt {
-                scopes: vec!["test".to_string()],
-            },
+            security: EndpointSecurity::Jwt,
+            authorization: EndpointAuthorization::Scopes(vec!["test".to_string()]),
             rate_limit: None,
             openapi: None,
         })
@@ -492,6 +495,7 @@ async fn builder_accepts_no_auth_endpoints_without_provider() {
             path: "/health".to_string(),
             handler: axum::routing::get(|| async { "ok" }),
             security: EndpointSecurity::None,
+            authorization: EndpointAuthorization::Public,
             rate_limit: None,
             openapi: None,
         })

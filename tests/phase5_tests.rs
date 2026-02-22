@@ -15,6 +15,7 @@ fn make_jwt(sub: &str, scopes: Vec<String>, exp: Option<u64>) -> String {
     let claims = JwtClaims {
         sub: sub.to_string(),
         scopes: ScopeClaim(scopes),
+        role: None,
         exp,
         iat: Some(
             std::time::SystemTime::now()
@@ -61,13 +62,15 @@ enum JwtTestError {
 
 #[a3_endpoint(GET "/health")]
 #[a3_security(none)]
+#[a3_authorize(public)]
 #[a3_rate_limit(none)]
 async fn health(_ctx: A3Context) -> A3Result<Json<HealthStatus>, Never> {
     Ok(Json(HealthStatus::ok("test")))
 }
 
 #[a3_endpoint(POST "/items")]
-#[a3_security(jwt, scopes = ["items:write"])]
+#[a3_security(jwt)]
+#[a3_authorize(scopes = ["items:write"])]
 #[a3_rate_limit(none)]
 async fn create_item(
     _ctx: A3Context,
@@ -78,7 +81,8 @@ async fn create_item(
 }
 
 #[a3_endpoint(GET "/items/:id")]
-#[a3_security(jwt, scopes = ["items:read"])]
+#[a3_security(jwt)]
+#[a3_authorize(scopes = ["items:read"])]
 #[a3_rate_limit(none)]
 async fn get_item(
     _ctx: A3Context,
@@ -168,6 +172,7 @@ async fn jwt_invalid_signature_returns_401() {
     let claims = JwtClaims {
         sub: "user-1".to_string(),
         scopes: ScopeClaim(vec!["items:read".to_string()]),
+        role: None,
         exp: Some(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -231,7 +236,7 @@ async fn jwt_scope_verification_403_on_missing_scope() {
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 
     let json = body_json(resp).await;
-    assert_eq!(json["error"]["code"], "insufficient_scopes");
+    assert_eq!(json["error"]["code"], "forbidden");
 }
 
 #[tokio::test]
@@ -450,6 +455,7 @@ fn make_rs256_jwt(sub: &str, scopes: Vec<String>) -> String {
     let claims = JwtClaims {
         sub: sub.to_string(),
         scopes: ScopeClaim(scopes),
+        role: None,
         exp: Some(exp),
         iat: None,
     };
@@ -529,6 +535,7 @@ fn make_es256_jwt(sub: &str, scopes: Vec<String>) -> String {
     let claims = JwtClaims {
         sub: sub.to_string(),
         scopes: ScopeClaim(scopes),
+        role: None,
         exp: Some(exp),
         iat: None,
     };

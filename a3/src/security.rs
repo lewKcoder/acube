@@ -40,6 +40,8 @@ pub struct AuthIdentity {
     pub subject: String,
     /// Granted scopes.
     pub scopes: Vec<String>,
+    /// Role claim (e.g., "admin").
+    pub role: Option<String>,
 }
 
 /// Authentication error.
@@ -63,6 +65,9 @@ pub struct JwtClaims {
     /// Granted scopes (comma-separated or array).
     #[serde(default)]
     pub scopes: ScopeClaim,
+    /// Role claim (e.g., "admin").
+    #[serde(default)]
+    pub role: Option<String>,
     /// Expiration time (Unix timestamp).
     #[serde(default)]
     pub exp: Option<u64>,
@@ -230,6 +235,7 @@ impl AuthProvider for JwtAuth {
         Ok(AuthIdentity {
             subject: token_data.claims.sub,
             scopes: token_data.claims.scopes.0,
+            role: token_data.claims.role,
         })
     }
 }

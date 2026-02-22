@@ -14,6 +14,7 @@ fn build_test_service() -> a3::runtime::Service {
             path: "/health".to_string(),
             handler: axum::routing::get(health_handler),
             security: EndpointSecurity::None,
+            authorization: EndpointAuthorization::Public,
             rate_limit: None,
             openapi: None,
         })
@@ -211,6 +212,7 @@ async fn service_builder_rejects_duplicate_endpoints() {
             path: "/test".to_string(),
             handler: axum::routing::get(health_handler),
             security: EndpointSecurity::None,
+            authorization: EndpointAuthorization::Public,
             rate_limit: None,
             openapi: None,
         })
@@ -219,6 +221,7 @@ async fn service_builder_rejects_duplicate_endpoints() {
             path: "/test".to_string(),
             handler: axum::routing::get(health_handler),
             security: EndpointSecurity::None,
+            authorization: EndpointAuthorization::Public,
             rate_limit: None,
             openapi: None,
         })
@@ -238,6 +241,7 @@ async fn custom_csp_is_applied() {
             path: "/health".to_string(),
             handler: axum::routing::get(health_handler),
             security: EndpointSecurity::None,
+            authorization: EndpointAuthorization::Public,
             rate_limit: None,
             openapi: None,
         })
@@ -274,6 +278,7 @@ async fn custom_csp_preserves_user_frame_ancestors() {
             path: "/health".to_string(),
             handler: axum::routing::get(health_handler),
             security: EndpointSecurity::None,
+            authorization: EndpointAuthorization::Public,
             rate_limit: None,
             openapi: None,
         })

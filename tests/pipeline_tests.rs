@@ -28,17 +28,23 @@ impl AuthProvider for ScopedAuth {
             return Err(a3::security::AuthError::InvalidToken);
         }
 
-        // Different tokens grant different scopes
-        let scopes = match token {
-            "admin-token" => vec!["items:read".to_string(), "items:write".to_string()],
-            "read-only-token" => vec!["items:read".to_string()],
-            "wildcard-token" => vec!["*".to_string()],
-            _ => vec![],
+        // Different tokens grant different scopes/roles
+        let (scopes, role) = match token {
+            "admin-token" => (
+                vec!["items:read".to_string(), "items:write".to_string()],
+                Some("admin".to_string()),
+            ),
+            "read-only-token" => (vec!["items:read".to_string()], None),
+            "wildcard-token" => (vec!["*".to_string()], None),
+            "user-token" => (vec![], Some("user".to_string())),
+            "auth-only-token" => (vec![], None),
+            _ => (vec![], None),
         };
 
         Ok(AuthIdentity {
             subject: "test-user".to_string(),
             scopes,
+            role,
         })
     }
 }
@@ -64,13 +70,15 @@ enum ItemError {
 
 #[a3_endpoint(GET "/health")]
 #[a3_security(none)]
+#[a3_authorize(public)]
 #[a3_rate_limit(none)]
 async fn health(_ctx: A3Context) -> A3Result<Json<HealthStatus>, Never> {
     Ok(Json(HealthStatus::ok("test")))
 }
 
 #[a3_endpoint(POST "/items")]
-#[a3_security(jwt, scopes = ["items:write"])]
+#[a3_security(jwt)]
+#[a3_authorize(scopes = ["items:write"])]
 #[a3_rate_limit(none)]
 async fn create_item(
     _ctx: A3Context,
@@ -81,7 +89,8 @@ async fn create_item(
 }
 
 #[a3_endpoint(GET "/items/:id")]
-#[a3_security(jwt, scopes = ["items:read"])]
+#[a3_security(jwt)]
+#[a3_authorize(scopes = ["items:read"])]
 #[a3_rate_limit(none)]
 async fn get_item(
     _ctx: A3Context,
@@ -92,6 +101,7 @@ async fn get_item(
 
 #[a3_endpoint(GET "/panic")]
 #[a3_security(none)]
+#[a3_authorize(public)]
 #[a3_rate_limit(none)]
 async fn panic_endpoint(_ctx: A3Context) -> A3Result<Json<serde_json::Value>, Never> {
     panic!("intentional test panic");
@@ -99,6 +109,7 @@ async fn panic_endpoint(_ctx: A3Context) -> A3Result<Json<serde_json::Value>, Ne
 
 #[a3_endpoint(POST "/limited")]
 #[a3_security(none)]
+#[a3_authorize(public)]
 #[a3_rate_limit(none)]
 async fn limited_endpoint(
     _ctx: A3Context,
@@ -110,9 +121,26 @@ async fn limited_endpoint(
 
 #[a3_endpoint(POST "/rate-limited")]
 #[a3_security(none)]
+#[a3_authorize(public)]
 #[a3_rate_limit(2, per_minute)]
 async fn rate_limited(_ctx: A3Context) -> A3Result<Json<serde_json::Value>, Never> {
     Ok(Json(serde_json::json!({"ok": true})))
+}
+
+#[a3_endpoint(GET "/admin-only")]
+#[a3_security(jwt)]
+#[a3_authorize(role = "admin")]
+#[a3_rate_limit(none)]
+async fn admin_only(_ctx: A3Context) -> A3Result<Json<serde_json::Value>, Never> {
+    Ok(Json(serde_json::json!({"admin": true})))
+}
+
+#[a3_endpoint(GET "/auth-only")]
+#[a3_security(jwt)]
+#[a3_authorize(authenticated)]
+#[a3_rate_limit(none)]
+async fn auth_only(_ctx: A3Context) -> A3Result<Json<serde_json::Value>, Never> {
+    Ok(Json(serde_json::json!({"authenticated": true})))
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -127,6 +155,8 @@ fn build_service() -> a3::runtime::Service {
         .endpoint(panic_endpoint())
         .endpoint(limited_endpoint())
         .endpoint(rate_limited())
+        .endpoint(admin_only())
+        .endpoint(auth_only())
         .auth(ScopedAuth)
         .payload_limit(1024) // 1 KB for testing
         .build()
@@ -225,7 +255,7 @@ async fn missing_scope_returns_403() {
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 
     let json = body_json(resp).await;
-    assert_eq!(json["error"]["code"], "insufficient_scopes");
+    assert_eq!(json["error"]["code"], "forbidden");
 }
 
 #[tokio::test]
@@ -550,4 +580,117 @@ async fn no_auth_endpoint_skips_scope_check() {
         .unwrap();
     let resp = router.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
+}
+
+// ─── Tests: Role-Based Authorization ─────────────────────────────────────────
+
+#[tokio::test]
+async fn role_admin_allows_admin_token() {
+    let router = build_service().into_router();
+    let req = Request::builder()
+        .uri("/admin-only")
+        .header("authorization", "Bearer admin-token")
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let json = body_json(resp).await;
+    assert_eq!(json["admin"], true);
+}
+
+#[tokio::test]
+async fn role_admin_rejects_user_token() {
+    let router = build_service().into_router();
+    let req = Request::builder()
+        .uri("/admin-only")
+        .header("authorization", "Bearer user-token")
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+
+    let json = body_json(resp).await;
+    assert_eq!(json["error"]["code"], "forbidden");
+}
+
+#[tokio::test]
+async fn role_admin_rejects_no_role_token() {
+    let router = build_service().into_router();
+    let req = Request::builder()
+        .uri("/admin-only")
+        .header("authorization", "Bearer read-only-token")
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+// ─── Tests: Authenticated-Only Authorization ─────────────────────────────────
+
+#[tokio::test]
+async fn authenticated_allows_any_valid_token() {
+    let router = build_service().into_router();
+    let req = Request::builder()
+        .uri("/auth-only")
+        .header("authorization", "Bearer auth-only-token")
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let json = body_json(resp).await;
+    assert_eq!(json["authenticated"], true);
+}
+
+#[tokio::test]
+async fn authenticated_rejects_no_token() {
+    let router = build_service().into_router();
+    let req = Request::builder()
+        .uri("/auth-only")
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+// ─── Tests: 403 Response Does Not Leak Details ──────────────────────────────
+
+#[tokio::test]
+async fn forbidden_response_does_not_leak_scope_names() {
+    let router = build_service().into_router();
+    let req = Request::builder()
+        .method("POST")
+        .uri("/items")
+        .header("authorization", "Bearer read-only-token")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"name":"test"}"#))
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+
+    let json = body_json(resp).await;
+    let body_str = serde_json::to_string(&json).unwrap();
+    // Should not contain scope names
+    assert!(!body_str.contains("items:write"));
+    assert!(!body_str.contains("items:read"));
+    assert_eq!(json["error"]["message"], "Insufficient permissions");
+}
+
+#[tokio::test]
+async fn forbidden_response_does_not_leak_role_names() {
+    let router = build_service().into_router();
+    let req = Request::builder()
+        .uri("/admin-only")
+        .header("authorization", "Bearer user-token")
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+
+    let json = body_json(resp).await;
+    let body_str = serde_json::to_string(&json).unwrap();
+    // Should not contain role names
+    assert!(!body_str.contains("admin"));
+    assert_eq!(json["error"]["message"], "Insufficient permissions");
 }

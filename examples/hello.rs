@@ -7,6 +7,7 @@ use a3::prelude::*;
 
 #[a3_endpoint(GET "/health")]
 #[a3_security(none)]
+#[a3_authorize(public)]
 #[a3_rate_limit(none)]
 async fn health_check(_ctx: A3Context) -> A3Result<Json<HealthStatus>, Never> {
     Ok(Json(HealthStatus::ok("0.1.0")))

@@ -88,6 +88,21 @@ pub fn a3_security(_attr: TokenStream, _item: TokenStream) -> TokenStream {
     .into()
 }
 
+/// Authorization declaration for an a³ endpoint.
+///
+/// Must be used together with `#[a3_endpoint]`.
+/// If used standalone, produces a compile error.
+#[proc_macro_attribute]
+pub fn a3_authorize(_attr: TokenStream, _item: TokenStream) -> TokenStream {
+    syn::Error::new(
+        proc_macro2::Span::call_site(),
+        "#[a3_authorize] must be placed below #[a3_endpoint]. \
+         The outer attribute (#[a3_endpoint]) processes it.",
+    )
+    .to_compile_error()
+    .into()
+}
+
 /// Rate limit declaration for an a³ endpoint.
 ///
 /// Must be used together with `#[a3_endpoint]`.

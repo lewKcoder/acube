@@ -1,0 +1,5 @@
+error: Cannot use #[a3_authorize(public)] with #[a3_security(jwt)]. Use #[a3_security(none)] for public endpoints.
+ --> $WORKSPACE/tests/compile_fail/endpoint_authorize_jwt_public.rs
+  |
+  | async fn test_handler(_ctx: A3Context) -> A3Result<Json<serde_json::Value>, Never> {
+  |          ^^^^^^^^^^^^

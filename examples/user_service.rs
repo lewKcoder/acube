@@ -69,7 +69,8 @@ fn user_store() -> UserStore {
 // ─── Endpoints ──────────────────────────────────────────────────────────────
 
 #[a3_endpoint(POST "/users")]
-#[a3_security(jwt, scopes = ["users:create"])]
+#[a3_security(jwt)]
+#[a3_authorize(scopes = ["users:create"])]
 #[a3_rate_limit(10, per_minute)]
 async fn create_user(
     _ctx: A3Context,
@@ -101,7 +102,8 @@ async fn create_user(
 }
 
 #[a3_endpoint(GET "/users/:id")]
-#[a3_security(jwt, scopes = ["users:read"])]
+#[a3_security(jwt)]
+#[a3_authorize(scopes = ["users:read"])]
 async fn get_user(
     _ctx: A3Context,
     axum::extract::Extension(store): axum::extract::Extension<UserStore>,
@@ -113,7 +115,8 @@ async fn get_user(
 }
 
 #[a3_endpoint(DELETE "/users/:id")]
-#[a3_security(jwt, scopes = ["users:delete"])]
+#[a3_security(jwt)]
+#[a3_authorize(scopes = ["users:delete"])]
 async fn delete_user(
     _ctx: A3Context,
     axum::extract::Extension(store): axum::extract::Extension<UserStore>,
@@ -126,6 +129,7 @@ async fn delete_user(
 
 #[a3_endpoint(GET "/health")]
 #[a3_security(none)]
+#[a3_authorize(public)]
 #[a3_rate_limit(none)]
 async fn health_check(_ctx: A3Context) -> A3Result<Json<HealthStatus>, Never> {
     Ok(Json(HealthStatus::ok("1.0.0")))

@@ -40,7 +40,7 @@ pub mod prelude {
     pub use axum::response::IntoResponse;
     pub use serde::{Deserialize, Serialize};
 
-    pub use a3_macros::{a3_endpoint, A3Error, A3Schema};
+    pub use a3_macros::{a3_authorize, a3_endpoint, A3Error, A3Schema};
 }
 
 /// Initialize structured tracing (logging).

@@ -31,7 +31,7 @@ use crate::error::error_response;
 use crate::extract::RequestId;
 use crate::rate_limit::{InMemoryBackend, RateLimitBackend, RateLimitOutcome};
 use crate::security::AuthProvider;
-use crate::types::{EndpointSecurity, HttpMethod, RateLimitConfig};
+use crate::types::{EndpointAuthorization, EndpointSecurity, HttpMethod, RateLimitConfig};
 
 /// Default payload size limit (1 MB).
 const DEFAULT_PAYLOAD_LIMIT: usize = 1024 * 1024;
@@ -58,6 +58,8 @@ pub struct EndpointRegistration {
     pub handler: axum::routing::MethodRouter,
     /// Security requirement for this endpoint.
     pub security: EndpointSecurity,
+    /// Authorization policy for this endpoint.
+    pub authorization: EndpointAuthorization,
     /// Rate limit configuration (None = no rate limit).
     pub rate_limit: Option<RateLimitConfig>,
     /// OpenAPI metadata (None = no OpenAPI info).
@@ -228,7 +230,7 @@ impl ServiceBuilder {
         let has_jwt = self
             .endpoints
             .iter()
-            .any(|ep| matches!(ep.security, EndpointSecurity::Jwt { .. }));
+            .any(|ep| matches!(ep.security, EndpointSecurity::Jwt));
         if has_jwt && self.auth_provider.is_none() {
             return Err(ServiceBuildError::MissingAuthProvider);
         }
@@ -295,7 +297,7 @@ impl Service {
         let has_jwt = self
             .endpoints
             .iter()
-            .any(|ep| matches!(ep.security, EndpointSecurity::Jwt { .. }));
+            .any(|ep| matches!(ep.security, EndpointSecurity::Jwt));
 
         for ep in &self.endpoints {
             // Convert axum path params `:param` → OpenAPI `{param}`
@@ -351,7 +353,11 @@ impl Service {
 
             // Security
             match &ep.security {
-                EndpointSecurity::Jwt { scopes } => {
+                EndpointSecurity::Jwt => {
+                    let scopes = match &ep.authorization {
+                        EndpointAuthorization::Scopes(s) => s.clone(),
+                        _ => vec![],
+                    };
                     operation.insert(
                         "security".to_string(),
                         serde_json::json!([{ "bearerAuth": scopes }]),
@@ -426,7 +432,7 @@ impl Service {
             }
 
             // Add common error responses for JWT endpoints
-            if matches!(ep.security, EndpointSecurity::Jwt { .. }) {
+            if matches!(ep.security, EndpointSecurity::Jwt) {
                 responses.entry("401".to_string()).or_insert_with(|| {
                     serde_json::json!({
                         "description": "Unauthorized",
@@ -577,12 +583,12 @@ impl Service {
                 });
             }
 
-            // Auth layer for JWT endpoints (with scope verification)
-            if let EndpointSecurity::Jwt { scopes } = &ep.security {
+            // Auth layer for JWT endpoints (with authorization)
+            if matches!(&ep.security, EndpointSecurity::Jwt) {
                 if let Some(ref provider) = self.auth_provider {
                     handler = handler.layer(JwtAuthLayer {
                         provider: provider.clone(),
-                        required_scopes: scopes.clone(),
+                        authorization: ep.authorization.clone(),
                     });
                 }
             }
@@ -777,7 +783,7 @@ async fn security_headers_middleware(
 #[derive(Clone)]
 struct JwtAuthLayer {
     provider: Arc<dyn AuthProvider>,
-    required_scopes: Vec<String>,
+    authorization: EndpointAuthorization,
 }
 
 impl<S> Layer<S> for JwtAuthLayer {
@@ -786,7 +792,7 @@ impl<S> Layer<S> for JwtAuthLayer {
         JwtAuthService {
             inner,
             provider: self.provider.clone(),
-            required_scopes: self.required_scopes.clone(),
+            authorization: self.authorization.clone(),
         }
     }
 }
@@ -795,7 +801,7 @@ impl<S> Layer<S> for JwtAuthLayer {
 struct JwtAuthService<S> {
     inner: S,
     provider: Arc<dyn AuthProvider>,
-    required_scopes: Vec<String>,
+    authorization: EndpointAuthorization,
 }
 
 impl<S> tower::Service<Request> for JwtAuthService<S>
@@ -815,7 +821,7 @@ where
         let clone = self.inner.clone();
         let mut inner = std::mem::replace(&mut self.inner, clone);
         let provider = self.provider.clone();
-        let required_scopes = self.required_scopes.clone();
+        let authorization = self.authorization.clone();
 
         Box::pin(async move {
             let request_id = req
@@ -826,21 +832,43 @@ where
 
             match provider.authenticate(&req) {
                 Ok(identity) => {
-                    // ③ Scope verification: check required scopes
-                    if !required_scopes.is_empty() {
-                        let has_wildcard = identity.scopes.iter().any(|s| s == "*");
-                        if !has_wildcard {
-                            for scope in &required_scopes {
-                                if !identity.scopes.contains(scope) {
-                                    return Ok(error_response(
-                                        StatusCode::FORBIDDEN,
-                                        "insufficient_scopes",
-                                        "Insufficient scopes",
-                                        &request_id,
-                                        false,
-                                        None,
-                                    ));
+                    // ③ Authorization check
+                    match &authorization {
+                        EndpointAuthorization::Public => {
+                            // Should not reach here (public = security(none))
+                        }
+                        EndpointAuthorization::Authenticated => {
+                            // Valid JWT is sufficient, no further checks
+                        }
+                        EndpointAuthorization::Scopes(required_scopes) => {
+                            if !required_scopes.is_empty() {
+                                let has_wildcard = identity.scopes.iter().any(|s| s == "*");
+                                if !has_wildcard {
+                                    for scope in required_scopes {
+                                        if !identity.scopes.contains(scope) {
+                                            return Ok(error_response(
+                                                StatusCode::FORBIDDEN,
+                                                "forbidden",
+                                                "Insufficient permissions",
+                                                &request_id,
+                                                false,
+                                                None,
+                                            ));
+                                        }
+                                    }
                                 }
+                            }
+                        }
+                        EndpointAuthorization::Role(required_role) => {
+                            if identity.role.as_ref() != Some(required_role) {
+                                return Ok(error_response(
+                                    StatusCode::FORBIDDEN,
+                                    "forbidden",
+                                    "Insufficient permissions",
+                                    &request_id,
+                                    false,
+                                    None,
+                                ));
                             }
                         }
                     }

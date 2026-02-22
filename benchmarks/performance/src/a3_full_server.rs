@@ -33,13 +33,15 @@ pub enum TaskError {
 
 #[a3_endpoint(GET "/health")]
 #[a3_security(none)]
+#[a3_authorize(public)]
 #[a3_rate_limit(none)]
 async fn health_check(_ctx: A3Context) -> A3Result<Json<HealthStatus>, Never> {
     Ok(Json(HealthStatus::ok("1.0.0")))
 }
 
 #[a3_endpoint(POST "/tasks")]
-#[a3_security(jwt, scopes = ["tasks:create"])]
+#[a3_security(jwt)]
+#[a3_authorize(scopes = ["tasks:create"])]
 #[a3_rate_limit(100, per_minute)]
 async fn create_task(
     _ctx: A3Context,
@@ -62,6 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let claims = JwtClaims {
         sub: "bench-user".to_string(),
         scopes: ScopeClaim(vec!["tasks:create".to_string()]),
+        role: None,
         exp: Some(chrono::Utc::now().timestamp() as u64 + 86400),
         iat: Some(chrono::Utc::now().timestamp() as u64),
     };

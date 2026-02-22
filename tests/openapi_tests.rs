@@ -58,6 +58,7 @@ impl AuthProvider for TestAuth {
         Ok(AuthIdentity {
             subject: "test-user".to_string(),
             scopes: vec!["users:create".to_string(), "users:read".to_string()],
+            role: None,
         })
     }
 }
@@ -66,13 +67,15 @@ impl AuthProvider for TestAuth {
 
 #[a3_endpoint(GET "/health")]
 #[a3_security(none)]
+#[a3_authorize(public)]
 #[a3_rate_limit(none)]
 async fn oa_health(_ctx: A3Context) -> A3Result<Json<HealthStatus>, Never> {
     Ok(Json(HealthStatus::ok("test")))
 }
 
 #[a3_endpoint(POST "/users")]
-#[a3_security(jwt, scopes = ["users:create"])]
+#[a3_security(jwt)]
+#[a3_authorize(scopes = ["users:create"])]
 #[a3_rate_limit(10, per_minute)]
 async fn oa_create_user(
     _ctx: A3Context,
@@ -83,7 +86,8 @@ async fn oa_create_user(
 }
 
 #[a3_endpoint(GET "/users/:id")]
-#[a3_security(jwt, scopes = ["users:read"])]
+#[a3_security(jwt)]
+#[a3_authorize(scopes = ["users:read"])]
 #[a3_rate_limit(none)]
 async fn oa_get_user(
     _ctx: A3Context,

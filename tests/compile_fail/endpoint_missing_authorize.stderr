@@ -1,0 +1,6 @@
+error: a³ endpoint requires an authorization declaration.
+         Add #[a3_authorize(scopes = [...])] or #[a3_authorize(public)] to explicitly opt out.
+ --> $WORKSPACE/tests/compile_fail/endpoint_missing_authorize.rs
+  |
+  | async fn test_handler(_ctx: A3Context) -> A3Result<Json<serde_json::Value>, Never> {
+  |          ^^^^^^^^^^^^

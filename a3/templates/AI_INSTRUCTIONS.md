@@ -38,7 +38,8 @@ pub enum UserError {
 }
 
 #[a3_endpoint(POST "/users")]
-#[a3_security(jwt, scopes = ["users:create"])]
+#[a3_security(jwt)]
+#[a3_authorize(scopes = ["users:create"])]
 #[a3_rate_limit(10, per_minute)]
 async fn create_user(
     ctx: A3Context,
@@ -51,6 +52,7 @@ async fn create_user(
 
 #[a3_endpoint(GET "/health")]
 #[a3_security(none)]
+#[a3_authorize(public)]
 #[a3_rate_limit(none)]
 async fn health_check(_ctx: A3Context) -> A3Result<Json<HealthStatus>, Never> {
     Ok(Json(HealthStatus::ok("1.0.0")))
@@ -74,21 +76,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## Rules (MUST follow)
 
 1. **Every endpoint MUST have `#[a3_security(...)]`** — otherwise it won't compile.
-   - `#[a3_security(jwt, scopes = ["scope:name"])]` for protected endpoints
+   - `#[a3_security(jwt)]` for JWT-authenticated endpoints
    - `#[a3_security(none)]` to explicitly opt out (e.g., health checks)
 
-2. **Rate limiting is automatic** — default 100/min per endpoint.
+2. **Every endpoint MUST have `#[a3_authorize(...)]`** — otherwise it won't compile.
+   - `#[a3_authorize(scopes = ["scope:name"])]` — requires specific scopes
+   - `#[a3_authorize(role = "admin")]` — requires a specific role
+   - `#[a3_authorize(authenticated)]` — requires any valid JWT (no scopes/role check)
+   - `#[a3_authorize(public)]` — no authorization (must pair with `#[a3_security(none)]`)
+
+3. **Consistency rules** (compile errors if violated):
+   - `#[a3_security(none)]` + `#[a3_authorize(scopes/role/authenticated)]` → error
+   - `#[a3_security(jwt)]` + `#[a3_authorize(public)]` → error
+
+4. **Rate limiting is automatic** — default 100/min per endpoint.
    - Override: `#[a3_rate_limit(10, per_minute)]`
    - Disable: `#[a3_rate_limit(none)]`
 
-3. **Use `Valid<T>` for input** — handles validation, sanitization, and unknown field rejection.
+5. **Use `Valid<T>` for input** — handles validation, sanitization, and unknown field rejection.
    - T must derive `A3Schema` and `Deserialize`
    - Returns structured 400 errors automatically
 
-4. **Use `A3Result<T, E>`** where E derives `A3Error`.
+6. **Use `A3Result<T, E>`** where E derives `A3Error`.
    - Use `Never` as the error type for infallible endpoints.
 
-5. **First parameter is always `A3Context`** (or `_ctx: A3Context`).
+7. **First parameter is always `A3Context`** (or `_ctx: A3Context`).
 
 ## What a3 does automatically
 
@@ -99,7 +111,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 - Structured JSON errors (never leaks internal info)
 - Panic handler (returns structured 500, no stack traces)
 - JWT signature validation (HS256 via `jsonwebtoken`)
-- Scope verification per endpoint
+- Authorization enforcement per endpoint (scopes, roles, authenticated)
 
 ## Schema Attributes
 
@@ -157,7 +169,8 @@ a3::serve(service, "0.0.0.0:3000").await
 
 // Handler — extract with Extension<T>
 #[a3_endpoint(GET "/items")]
-#[a3_security(jwt, scopes = ["items:read"])]
+#[a3_security(jwt)]
+#[a3_authorize(scopes = ["items:read"])]
 async fn handler(
     ctx: A3Context,
     axum::extract::Extension(pool): axum::extract::Extension<SqlitePool>,
@@ -196,15 +209,17 @@ a3 supports HS256, RS256, and ES256:
 
 ## AuthIdentity
 
-When an endpoint has `#[a3_security(jwt, scopes = [...])]`, the authenticated identity is available via `ctx.auth`:
+When an endpoint has `#[a3_security(jwt)]`, the authenticated identity is available via `ctx.auth`:
 
 ```rust
 #[a3_endpoint(GET "/me")]
-#[a3_security(jwt, scopes = ["profile:read"])]
+#[a3_security(jwt)]
+#[a3_authorize(scopes = ["profile:read"])]
 async fn get_me(ctx: A3Context) -> A3Result<Json<Profile>, MyError> {
     let identity = ctx.auth.as_ref().unwrap(); // Always Some for JWT endpoints
     let user_id = &identity.subject;           // User ID from JWT "sub" claim
     let scopes = &identity.scopes;             // Granted scopes
+    let role = &identity.role;                 // Role claim (Option<String>)
     // ...
 }
 ```
@@ -212,6 +227,7 @@ async fn get_me(ctx: A3Context) -> A3Result<Json<Profile>, MyError> {
 - `ctx.auth` is `Option<AuthIdentity>` — `Some` for JWT endpoints, `None` for `#[a3_security(none)]`
 - `AuthIdentity.subject: String` — the JWT `sub` claim (typically user ID)
 - `AuthIdentity.scopes: Vec<String>` — the granted scopes
+- `AuthIdentity.role: Option<String>` — the role claim
 
 ## JWT Claims
 
@@ -224,6 +240,7 @@ use jsonwebtoken::{encode, EncodingKey, Header};
 let claims = JwtClaims {
     sub: user_id.to_string(),                              // Subject (user ID)
     scopes: ScopeClaim(vec!["tasks:*".to_string()]),       // Granted scopes
+    role: Some("admin".to_string()),                       // Role (optional)
     exp: Some(chrono::Utc::now().timestamp() as u64 + 86400), // Expiration (Unix timestamp)
     iat: Some(chrono::Utc::now().timestamp() as u64),      // Issued at
 };
@@ -237,6 +254,7 @@ let token = encode(
 
 - `JwtClaims.sub: String` — subject (required)
 - `JwtClaims.scopes: ScopeClaim` — scopes as `ScopeClaim(Vec<String>)`
+- `JwtClaims.role: Option<String>` — role claim (optional)
 - `JwtClaims.exp: Option<u64>` — expiration time (Unix timestamp)
 - `JwtClaims.iat: Option<u64>` — issued-at time (Unix timestamp)
 

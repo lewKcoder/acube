@@ -65,6 +65,7 @@ tokio = {{ version = "1", features = ["full"] }}
 
 #[a3_endpoint(GET "/health")]
 #[a3_security(none)]
+#[a3_authorize(public)]
 async fn health(_ctx: A3Context) -> A3Result<Json<HealthStatus>, Never> {{
     Ok(Json(HealthStatus::ok("0.1.0")))
 }}

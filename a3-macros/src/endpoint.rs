@@ -1,4 +1,4 @@
-//! Implementation of `#[a3_endpoint]`, `#[a3_security]`, and `#[a3_rate_limit]`.
+//! Implementation of `#[a3_endpoint]`, `#[a3_security]`, `#[a3_authorize]`, and `#[a3_rate_limit]`.
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -7,7 +7,15 @@ use syn::{Attribute, Ident, ItemFn, Lit, ReturnType, Type};
 /// Parsed security declaration.
 enum Security {
     None,
-    Jwt { scopes: Vec<String> },
+    Jwt,
+}
+
+/// Parsed authorization declaration.
+enum Authorization {
+    Public,
+    Authenticated,
+    Scopes(Vec<String>),
+    Role(String),
 }
 
 /// Parsed rate limit declaration.
@@ -31,10 +39,56 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream, syn::
             return Err(syn::Error::new_spanned(
                 &func.sig.ident,
                 "a³ endpoint requires a security declaration.\n  \
-                 Add #[a3_security(jwt, scopes = [...])] or #[a3_security(none)] to explicitly opt out.",
+                 Add #[a3_security(jwt)] or #[a3_security(none)] to explicitly opt out.",
             ));
         }
     };
+
+    // Extract and remove #[a3_authorize(...)] from the function's attributes
+    let authorize_attr = extract_named_attr(&mut func.attrs, "a3_authorize");
+    let authorization = match authorize_attr {
+        Some(attr) => parse_authorize(&attr)?,
+        None => {
+            return Err(syn::Error::new_spanned(
+                &func.sig.ident,
+                "a³ endpoint requires an authorization declaration.\n  \
+                 Add #[a3_authorize(scopes = [...])] or #[a3_authorize(public)] to explicitly opt out.",
+            ));
+        }
+    };
+
+    // Consistency checks between security and authorization
+    match (&security, &authorization) {
+        (Security::None, Authorization::Scopes(_)) => {
+            return Err(syn::Error::new_spanned(
+                &func.sig.ident,
+                "Cannot use #[a3_authorize(scopes = [...])] with #[a3_security(none)]. \
+                 Use #[a3_security(jwt)] for scope-protected endpoints.",
+            ));
+        }
+        (Security::None, Authorization::Role(_)) => {
+            return Err(syn::Error::new_spanned(
+                &func.sig.ident,
+                "Cannot use #[a3_authorize(role = \"...\")] with #[a3_security(none)]. \
+                 Use #[a3_security(jwt)] for role-protected endpoints.",
+            ));
+        }
+        (Security::None, Authorization::Authenticated) => {
+            return Err(syn::Error::new_spanned(
+                &func.sig.ident,
+                "Cannot use #[a3_authorize(authenticated)] with #[a3_security(none)]. \
+                 Use #[a3_security(jwt)] for authenticated endpoints.",
+            ));
+        }
+        (Security::Jwt, Authorization::Public) => {
+            return Err(syn::Error::new_spanned(
+                &func.sig.ident,
+                "Cannot use #[a3_authorize(public)] with #[a3_security(jwt)]. \
+                 Use #[a3_security(none)] for public endpoints.",
+            ));
+        }
+        _ => {}
+    }
 
     // Extract and remove #[a3_rate_limit(...)] from the function's attributes
     let rate_limit_attr = extract_named_attr(&mut func.attrs, "a3_rate_limit");
@@ -87,9 +141,21 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream, syn::
     // Generate security expression
     let security_expr = match security {
         Security::None => quote! { a3::types::EndpointSecurity::None },
-        Security::Jwt { scopes } => {
+        Security::Jwt => quote! { a3::types::EndpointSecurity::Jwt },
+    };
+
+    // Generate authorization expression
+    let authorization_expr = match &authorization {
+        Authorization::Public => quote! { a3::types::EndpointAuthorization::Public },
+        Authorization::Authenticated => {
+            quote! { a3::types::EndpointAuthorization::Authenticated }
+        }
+        Authorization::Scopes(scopes) => {
             let scope_strs: Vec<_> = scopes.iter().map(|s| quote!(#s.to_string())).collect();
-            quote! { a3::types::EndpointSecurity::Jwt { scopes: vec![#(#scope_strs),*] } }
+            quote! { a3::types::EndpointAuthorization::Scopes(vec![#(#scope_strs),*]) }
+        }
+        Authorization::Role(role) => {
+            quote! { a3::types::EndpointAuthorization::Role(#role.to_string()) }
         }
     };
 
@@ -136,6 +202,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream, syn::
                 path: #path.to_string(),
                 handler: #route_fn(#handler_name),
                 security: #security_expr,
+                authorization: #authorization_expr,
                 rate_limit: #rate_limit_expr,
                 openapi: Some(a3::runtime::EndpointOpenApi {
                     request_schema: #request_schema_expr,
@@ -288,35 +355,74 @@ fn extract_named_attr(attrs: &mut Vec<Attribute>, name: &str) -> Option<Attribut
     Some(attrs.remove(idx))
 }
 
-/// Parse `#[a3_security(jwt, scopes = ["..."])]` or `#[a3_security(none)]`.
+/// Parse `#[a3_security(jwt)]` or `#[a3_security(none)]`.
+///
+/// Produces a helpful error if the legacy `scopes = [...]` syntax is used.
 fn parse_security(attr: &Attribute) -> Result<Security, syn::Error> {
     attr.parse_args_with(|input: syn::parse::ParseStream| {
         let ident: Ident = input.parse()?;
         match ident.to_string().as_str() {
             "none" => Ok(Security::None),
             "jwt" => {
-                let mut scopes = Vec::new();
-                while !input.is_empty() {
-                    input.parse::<syn::Token![,]>()?;
-                    let key: Ident = input.parse()?;
-                    if key == "scopes" {
-                        input.parse::<syn::Token![=]>()?;
-                        let content;
-                        syn::bracketed!(content in input);
-                        while !content.is_empty() {
-                            let scope: syn::LitStr = content.parse()?;
-                            scopes.push(scope.value());
-                            if content.peek(syn::Token![,]) {
-                                content.parse::<syn::Token![,]>()?;
+                // Check for legacy scopes syntax and produce helpful error
+                if !input.is_empty() {
+                    if input.peek(syn::Token![,]) {
+                        let comma_span = input.parse::<syn::Token![,]>()?.span;
+                        if input.peek(syn::Ident) {
+                            let key: Ident = input.fork().parse()?;
+                            if key == "scopes" {
+                                return Err(syn::Error::new(
+                                    comma_span,
+                                    "Scopes have moved to #[a3_authorize(scopes = [...])]. \
+                                     Use #[a3_security(jwt)] for authentication only.",
+                                ));
                             }
                         }
                     }
                 }
-                Ok(Security::Jwt { scopes })
+                Ok(Security::Jwt)
             }
             other => Err(syn::Error::new(
                 ident.span(),
                 format!("Expected 'jwt' or 'none', found '{}'", other),
+            )),
+        }
+    })
+}
+
+/// Parse `#[a3_authorize(public)]`, `#[a3_authorize(authenticated)]`,
+/// `#[a3_authorize(scopes = ["..."])]`, or `#[a3_authorize(role = "...")]`.
+fn parse_authorize(attr: &Attribute) -> Result<Authorization, syn::Error> {
+    attr.parse_args_with(|input: syn::parse::ParseStream| {
+        let ident: Ident = input.parse()?;
+        match ident.to_string().as_str() {
+            "public" => Ok(Authorization::Public),
+            "authenticated" => Ok(Authorization::Authenticated),
+            "scopes" => {
+                input.parse::<syn::Token![=]>()?;
+                let content;
+                syn::bracketed!(content in input);
+                let mut scopes = Vec::new();
+                while !content.is_empty() {
+                    let scope: syn::LitStr = content.parse()?;
+                    scopes.push(scope.value());
+                    if content.peek(syn::Token![,]) {
+                        content.parse::<syn::Token![,]>()?;
+                    }
+                }
+                Ok(Authorization::Scopes(scopes))
+            }
+            "role" => {
+                input.parse::<syn::Token![=]>()?;
+                let role: syn::LitStr = input.parse()?;
+                Ok(Authorization::Role(role.value()))
+            }
+            other => Err(syn::Error::new(
+                ident.span(),
+                format!(
+                    "Expected 'public', 'authenticated', 'scopes', or 'role', found '{}'",
+                    other
+                ),
             )),
         }
     })
