@@ -104,7 +104,21 @@ impl<'de> Deserialize<'de> for ScopeClaim {
     }
 }
 
-/// JWT authentication provider with real signature validation.
+/// Error type for JWT authentication configuration.
+#[derive(Debug, thiserror::Error)]
+pub enum JwtAuthError {
+    /// The PEM key data is invalid or cannot be parsed.
+    #[error("Invalid PEM key: {0}")]
+    InvalidKey(String),
+    /// The specified algorithm is not supported.
+    #[error("Unsupported algorithm: {0}. Supported: HS256, RS256, ES256")]
+    UnsupportedAlgorithm(String),
+    /// A required environment variable is missing.
+    #[error("Missing environment variable: {0}")]
+    MissingEnvVar(String),
+}
+
+/// JWT authentication provider supporting HS256, RS256, and ES256.
 #[derive(Clone)]
 pub struct JwtAuth {
     decoding_key: DecodingKey,
@@ -120,19 +134,63 @@ impl std::fmt::Debug for JwtAuth {
 }
 
 impl JwtAuth {
-    /// Create from environment variable `JWT_SECRET` (HMAC-SHA256).
+    /// Create from environment variables.
     ///
-    /// Falls back to `"dev-secret"` if the environment variable is not set.
-    /// **Warning**: In production, always set `JWT_SECRET` to a strong, random value.
-    pub fn from_env() -> Result<Self, std::env::VarError> {
-        let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "dev-secret".to_string());
-        Ok(Self::new(&secret))
+    /// Reads `JWT_ALGORITHM` (default: `"HS256"`) and loads the appropriate key:
+    /// - **HS256**: uses `JWT_SECRET` (falls back to `"dev-secret"` for development)
+    /// - **RS256**: uses `JWT_PUBLIC_KEY` (RSA public key in PEM format, required)
+    /// - **ES256**: uses `JWT_PUBLIC_KEY` (EC public key in PEM format, required)
+    pub fn from_env() -> Result<Self, JwtAuthError> {
+        let algorithm = std::env::var("JWT_ALGORITHM").unwrap_or_else(|_| "HS256".to_string());
+
+        match algorithm.to_uppercase().as_str() {
+            "HS256" => {
+                let secret =
+                    std::env::var("JWT_SECRET").unwrap_or_else(|_| "dev-secret".to_string());
+                Ok(Self::new(&secret))
+            }
+            "RS256" => {
+                let pem = std::env::var("JWT_PUBLIC_KEY")
+                    .map_err(|_| JwtAuthError::MissingEnvVar("JWT_PUBLIC_KEY".to_string()))?;
+                Self::from_rsa_pem(pem.as_bytes())
+            }
+            "ES256" => {
+                let pem = std::env::var("JWT_PUBLIC_KEY")
+                    .map_err(|_| JwtAuthError::MissingEnvVar("JWT_PUBLIC_KEY".to_string()))?;
+                Self::from_ec_pem(pem.as_bytes())
+            }
+            other => Err(JwtAuthError::UnsupportedAlgorithm(other.to_string())),
+        }
     }
 
-    /// Create from an explicit secret (HMAC-SHA256).
+    /// Create from an explicit HMAC secret (HS256).
     pub fn new(secret: &str) -> Self {
         let decoding_key = DecodingKey::from_secret(secret.as_bytes());
-        let mut validation = Validation::new(jsonwebtoken::Algorithm::HS256);
+        Self::with_algorithm(decoding_key, jsonwebtoken::Algorithm::HS256)
+    }
+
+    /// Create from an RSA public key in PEM format (RS256).
+    pub fn from_rsa_pem(pem: &[u8]) -> Result<Self, JwtAuthError> {
+        let decoding_key = DecodingKey::from_rsa_pem(pem)
+            .map_err(|e| JwtAuthError::InvalidKey(e.to_string()))?;
+        Ok(Self::with_algorithm(
+            decoding_key,
+            jsonwebtoken::Algorithm::RS256,
+        ))
+    }
+
+    /// Create from an EC public key in PEM format (ES256).
+    pub fn from_ec_pem(pem: &[u8]) -> Result<Self, JwtAuthError> {
+        let decoding_key = DecodingKey::from_ec_pem(pem)
+            .map_err(|e| JwtAuthError::InvalidKey(e.to_string()))?;
+        Ok(Self::with_algorithm(
+            decoding_key,
+            jsonwebtoken::Algorithm::ES256,
+        ))
+    }
+
+    fn with_algorithm(decoding_key: DecodingKey, algorithm: jsonwebtoken::Algorithm) -> Self {
+        let mut validation = Validation::new(algorithm);
         validation.required_spec_claims.clear();
         validation.validate_exp = true;
         Self {

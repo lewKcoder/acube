@@ -20,10 +20,12 @@ pub mod types;
 pub mod prelude {
     pub use crate::error::{A3ErrorInfo, A3FrameworkError};
     pub use crate::extract::{A3Context, Valid};
-    pub use crate::rate_limit::{InMemoryBackend, RateLimitBackend};
+    pub use crate::rate_limit::{
+        InMemoryBackend, RateLimitBackend, RateLimitOutcome, RateLimitRejection,
+    };
     pub use crate::runtime::{EndpointRegistration, Service};
     pub use crate::schema::{A3SchemaInfo, A3Validate, ValidationError};
-    pub use crate::security::{AuthIdentity, AuthProvider, JwtAuth, JwtClaims};
+    pub use crate::security::{AuthIdentity, AuthProvider, JwtAuth, JwtAuthError, JwtClaims};
     pub use crate::types::*;
 
     pub use axum::extract::Json;

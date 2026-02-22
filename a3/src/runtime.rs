@@ -29,7 +29,7 @@ use uuid::Uuid;
 
 use crate::error::error_response;
 use crate::extract::RequestId;
-use crate::rate_limit::{InMemoryBackend, RateLimitBackend};
+use crate::rate_limit::{InMemoryBackend, RateLimitBackend, RateLimitOutcome};
 use crate::security::AuthProvider;
 use crate::types::{EndpointSecurity, HttpMethod, RateLimitConfig};
 
@@ -51,6 +51,10 @@ pub struct EndpointRegistration {
 }
 
 /// Builder for constructing an a³ `Service`.
+/// Default Content-Security-Policy value.
+const DEFAULT_CSP: &str = "default-src 'none'; frame-ancestors 'none'";
+
+/// Builder for constructing an a³ `Service`.
 pub struct ServiceBuilder {
     name: Option<String>,
     version: Option<String>,
@@ -59,6 +63,7 @@ pub struct ServiceBuilder {
     rate_limit_backend: Option<Arc<dyn RateLimitBackend>>,
     payload_limit: usize,
     cors_origins: Vec<String>,
+    csp: String,
 }
 
 impl ServiceBuilder {
@@ -71,6 +76,7 @@ impl ServiceBuilder {
             rate_limit_backend: None,
             payload_limit: DEFAULT_PAYLOAD_LIMIT,
             cors_origins: Vec::new(),
+            csp: DEFAULT_CSP.to_string(),
         }
     }
 
@@ -119,6 +125,30 @@ impl ServiceBuilder {
         self
     }
 
+    /// Set a custom Content-Security-Policy header value.
+    ///
+    /// Default: `"default-src 'none'; frame-ancestors 'none'"` (very restrictive).
+    ///
+    /// Override this for applications that serve HTML, load scripts, or use
+    /// external resources. The `frame-ancestors 'none'` directive is always
+    /// appended if not already present.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// Service::builder()
+    ///     .content_security_policy("default-src 'self'; script-src 'self'; frame-ancestors 'none'")
+    /// ```
+    pub fn content_security_policy(mut self, policy: &str) -> Self {
+        // Ensure frame-ancestors is always present (clickjacking protection)
+        if !policy.contains("frame-ancestors") {
+            self.csp = format!("{}; frame-ancestors 'none'", policy);
+        } else {
+            self.csp = policy.to_string();
+        }
+        self
+    }
+
     /// Build the service, performing startup contract validation.
     pub fn build(self) -> Result<Service, ServiceBuildError> {
         let name = self.name.ok_or(ServiceBuildError::MissingField("name"))?;
@@ -156,6 +186,7 @@ impl ServiceBuilder {
             rate_limiter,
             payload_limit: self.payload_limit,
             cors_origins: self.cors_origins,
+            csp: self.csp,
         })
     }
 }
@@ -182,6 +213,7 @@ pub struct Service {
     rate_limiter: Arc<dyn RateLimitBackend>,
     payload_limit: usize,
     cors_origins: Vec<String>,
+    csp: String,
 }
 
 impl Service {
@@ -265,8 +297,12 @@ impl Service {
         // Panic handler (innermost — catches panics, response flows through outer layers)
         router = router.layer(CatchPanicLayer::custom(panic_handler));
 
-        // ⑥ Response: security headers middleware
-        router = router.layer(middleware::from_fn(security_headers_middleware));
+        // ⑥ Response: security headers middleware (with configurable CSP)
+        let csp_value = Arc::new(self.csp);
+        router = router.layer(middleware::from_fn_with_state(
+            csp_value,
+            security_headers_middleware,
+        ));
 
         // ② Security: payload size limit
         router = router.layer(RequestBodyLimitLayer::new(self.payload_limit));
@@ -334,6 +370,10 @@ async fn request_id_middleware(mut req: Request, next: Next) -> Response {
 
 // ─── Security headers middleware ─────────────────────────────────────────────
 
+static HEADER_RATELIMIT_LIMIT: HeaderName = HeaderName::from_static("x-ratelimit-limit");
+static HEADER_RATELIMIT_REMAINING: HeaderName = HeaderName::from_static("x-ratelimit-remaining");
+static HEADER_RATELIMIT_RESET: HeaderName = HeaderName::from_static("x-ratelimit-reset");
+
 static HEADER_X_CONTENT_TYPE_OPTIONS: HeaderName =
     HeaderName::from_static("x-content-type-options");
 static HEADER_X_FRAME_OPTIONS: HeaderName = HeaderName::from_static("x-frame-options");
@@ -346,7 +386,13 @@ static HEADER_REFERRER_POLICY: HeaderName = HeaderName::from_static("referrer-po
 static HEADER_PERMISSIONS_POLICY: HeaderName = HeaderName::from_static("permissions-policy");
 
 /// Middleware that injects all 7 security headers into every response.
-async fn security_headers_middleware(req: Request, next: Next) -> Response {
+///
+/// The CSP header value is configurable via `Service::builder().content_security_policy()`.
+async fn security_headers_middleware(
+    axum::extract::State(csp): axum::extract::State<Arc<String>>,
+    req: Request,
+    next: Next,
+) -> Response {
     let mut response = next.run(req).await;
     let headers = response.headers_mut();
     headers.insert(
@@ -365,10 +411,9 @@ async fn security_headers_middleware(req: Request, next: Next) -> Response {
         HEADER_STRICT_TRANSPORT_SECURITY.clone(),
         HeaderValue::from_static("max-age=63072000; includeSubDomains; preload"),
     );
-    headers.insert(
-        HEADER_CONTENT_SECURITY_POLICY.clone(),
-        HeaderValue::from_static("default-src 'none'; frame-ancestors 'none'"),
-    );
+    if let Ok(val) = HeaderValue::from_str(&csp) {
+        headers.insert(HEADER_CONTENT_SECURITY_POLICY.clone(), val);
+    }
     headers.insert(
         HEADER_REFERRER_POLICY.clone(),
         HeaderValue::from_static("strict-origin-when-cross-origin"),
@@ -519,9 +564,13 @@ where
 
         Box::pin(async move {
             let key = get_rate_limit_key(&req);
-            match backend.check(&key, max, window) {
-                Ok(_remaining) => inner.call(req).await,
-                Err(retry_after) => {
+            match backend.check(&key, max, window).await {
+                Ok(outcome) => {
+                    let mut resp = inner.call(req).await?;
+                    inject_rate_limit_headers(resp.headers_mut(), &outcome);
+                    Ok(resp)
+                }
+                Err(rejection) => {
                     let request_id = req
                         .extensions()
                         .get::<RequestId>()
@@ -535,14 +584,39 @@ where
                         true,
                         None,
                     );
-                    if let Ok(val) = HeaderValue::from_str(&retry_after.to_string()) {
-                        resp.headers_mut()
-                            .insert(HeaderName::from_static("retry-after"), val);
+                    let headers = resp.headers_mut();
+                    if let Ok(val) = HeaderValue::from_str(&rejection.retry_after.to_string()) {
+                        headers.insert(HeaderName::from_static("retry-after"), val);
                     }
+                    if let Ok(val) = HeaderValue::from_str(&rejection.limit.to_string()) {
+                        headers.insert(HEADER_RATELIMIT_LIMIT.clone(), val);
+                    }
+                    headers.insert(
+                        HEADER_RATELIMIT_REMAINING.clone(),
+                        HeaderValue::from_static("0"),
+                    );
                     Ok(resp)
                 }
             }
         })
+    }
+}
+
+// ─── Rate Limit Headers ──────────────────────────────────────────────────────
+
+/// Inject standard rate limit headers into a successful response.
+fn inject_rate_limit_headers(
+    headers: &mut axum::http::HeaderMap,
+    outcome: &RateLimitOutcome,
+) {
+    if let Ok(val) = HeaderValue::from_str(&outcome.limit.to_string()) {
+        headers.insert(HEADER_RATELIMIT_LIMIT.clone(), val);
+    }
+    if let Ok(val) = HeaderValue::from_str(&outcome.remaining.to_string()) {
+        headers.insert(HEADER_RATELIMIT_REMAINING.clone(), val);
+    }
+    if let Ok(val) = HeaderValue::from_str(&outcome.reset_after.to_string()) {
+        headers.insert(HEADER_RATELIMIT_RESET.clone(), val);
     }
 }
 

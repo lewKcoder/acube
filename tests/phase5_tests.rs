@@ -436,6 +436,176 @@ async fn cors_simple_request_includes_origin_header() {
     );
 }
 
+// ─── Tests: RS256 JWT ───────────────────────────────────────────────────────
+
+const RSA_PRIVATE_KEY: &[u8] = include_bytes!("test_keys/rsa_private.pem");
+const RSA_PUBLIC_KEY: &[u8] = include_bytes!("test_keys/rsa_public.pem");
+
+fn make_rs256_jwt(sub: &str, scopes: Vec<String>) -> String {
+    let exp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        + 3600;
+    let claims = JwtClaims {
+        sub: sub.to_string(),
+        scopes: ScopeClaim(scopes),
+        exp: Some(exp),
+        iat: None,
+    };
+    jsonwebtoken::encode(
+        &Header::new(jsonwebtoken::Algorithm::RS256),
+        &claims,
+        &EncodingKey::from_rsa_pem(RSA_PRIVATE_KEY).unwrap(),
+    )
+    .unwrap()
+}
+
+fn build_rs256_service() -> a3::runtime::Service {
+    Service::builder()
+        .name("rs256-test")
+        .version("0.1.0")
+        .endpoint(health())
+        .endpoint(get_item())
+        .auth(JwtAuth::from_rsa_pem(RSA_PUBLIC_KEY).unwrap())
+        .build()
+        .expect("failed to build RS256 service")
+}
+
+#[tokio::test]
+async fn rs256_valid_token_accepted() {
+    let router = build_rs256_service().into_router();
+    let token = make_rs256_jwt("user-1", vec!["items:read".to_string()]);
+    let req = Request::builder()
+        .uri("/items/99")
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["id"], "99");
+}
+
+#[tokio::test]
+async fn rs256_hs256_token_rejected() {
+    // An HS256 token should be rejected by RS256 auth
+    let router = build_rs256_service().into_router();
+    let token = make_valid_jwt("user-1", vec!["items:read".to_string()]);
+    let req = Request::builder()
+        .uri("/items/42")
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn rs256_scope_verification_works() {
+    let router = build_rs256_service().into_router();
+    // Token has "admin" scope, endpoint requires "items:read"
+    let token = make_rs256_jwt("user-1", vec!["admin".to_string()]);
+    let req = Request::builder()
+        .uri("/items/42")
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+// ─── Tests: ES256 JWT ───────────────────────────────────────────────────────
+
+const EC_PRIVATE_KEY: &[u8] = include_bytes!("test_keys/ec_private.pem");
+const EC_PUBLIC_KEY: &[u8] = include_bytes!("test_keys/ec_public.pem");
+
+fn make_es256_jwt(sub: &str, scopes: Vec<String>) -> String {
+    let exp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        + 3600;
+    let claims = JwtClaims {
+        sub: sub.to_string(),
+        scopes: ScopeClaim(scopes),
+        exp: Some(exp),
+        iat: None,
+    };
+    jsonwebtoken::encode(
+        &Header::new(jsonwebtoken::Algorithm::ES256),
+        &claims,
+        &EncodingKey::from_ec_pem(EC_PRIVATE_KEY).unwrap(),
+    )
+    .unwrap()
+}
+
+fn build_es256_service() -> a3::runtime::Service {
+    Service::builder()
+        .name("es256-test")
+        .version("0.1.0")
+        .endpoint(health())
+        .endpoint(get_item())
+        .auth(JwtAuth::from_ec_pem(EC_PUBLIC_KEY).unwrap())
+        .build()
+        .expect("failed to build ES256 service")
+}
+
+#[tokio::test]
+async fn es256_valid_token_accepted() {
+    let router = build_es256_service().into_router();
+    let token = make_es256_jwt("user-1", vec!["items:read".to_string()]);
+    let req = Request::builder()
+        .uri("/items/77")
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["id"], "77");
+}
+
+#[tokio::test]
+async fn es256_hs256_token_rejected() {
+    let router = build_es256_service().into_router();
+    let token = make_valid_jwt("user-1", vec!["items:read".to_string()]);
+    let req = Request::builder()
+        .uri("/items/42")
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn es256_rs256_token_rejected() {
+    let router = build_es256_service().into_router();
+    let token = make_rs256_jwt("user-1", vec!["items:read".to_string()]);
+    let req = Request::builder()
+        .uri("/items/42")
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+// ─── Tests: JwtAuth Error Cases ─────────────────────────────────────────────
+
+#[test]
+fn jwt_auth_invalid_rsa_pem_returns_error() {
+    let result = JwtAuth::from_rsa_pem(b"not a valid pem");
+    assert!(result.is_err());
+}
+
+#[test]
+fn jwt_auth_invalid_ec_pem_returns_error() {
+    let result = JwtAuth::from_ec_pem(b"not a valid pem");
+    assert!(result.is_err());
+}
+
 // ─── Tests: Deserialization Error Sanitization ──────────────────────────────
 
 #[tokio::test]

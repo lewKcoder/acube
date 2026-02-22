@@ -392,6 +392,92 @@ async fn rate_limit_response_has_retry_after_header() {
     assert!(resp.headers().get("retry-after").is_some());
 }
 
+#[tokio::test]
+async fn rate_limit_success_includes_limit_headers() {
+    let router = build_service().into_router();
+    let req = Request::builder()
+        .method("POST")
+        .uri("/rate-limited")
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Successful response should include rate limit headers
+    assert_eq!(
+        resp.headers().get("x-ratelimit-limit").unwrap().to_str().unwrap(),
+        "2"
+    );
+    assert_eq!(
+        resp.headers().get("x-ratelimit-remaining").unwrap().to_str().unwrap(),
+        "1"
+    );
+    assert!(resp.headers().get("x-ratelimit-reset").is_some());
+}
+
+#[tokio::test]
+async fn rate_limit_remaining_decrements() {
+    let service = build_service();
+    let router = service.into_router();
+
+    // First request: remaining = 1
+    let req = Request::builder()
+        .method("POST")
+        .uri("/rate-limited")
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.clone().oneshot(req).await.unwrap();
+    assert_eq!(
+        resp.headers().get("x-ratelimit-remaining").unwrap().to_str().unwrap(),
+        "1"
+    );
+
+    // Second request: remaining = 0
+    let req = Request::builder()
+        .method("POST")
+        .uri("/rate-limited")
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(
+        resp.headers().get("x-ratelimit-remaining").unwrap().to_str().unwrap(),
+        "0"
+    );
+}
+
+#[tokio::test]
+async fn rate_limit_429_includes_limit_headers() {
+    let service = build_service();
+    let router = service.into_router();
+
+    // Exhaust the limit
+    for _ in 0..2 {
+        let req = Request::builder()
+            .method("POST")
+            .uri("/rate-limited")
+            .body(Body::empty())
+            .unwrap();
+        let _ = router.clone().oneshot(req).await.unwrap();
+    }
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/rate-limited")
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(
+        resp.headers().get("x-ratelimit-limit").unwrap().to_str().unwrap(),
+        "2"
+    );
+    assert_eq!(
+        resp.headers().get("x-ratelimit-remaining").unwrap().to_str().unwrap(),
+        "0"
+    );
+}
+
 // ─── Tests: ⑥ Response — Pipeline Integration ───────────────────────────────
 
 #[tokio::test]

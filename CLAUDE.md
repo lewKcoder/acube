@@ -131,6 +131,7 @@ Service::builder()
     .endpoint(handler_fn())                        // Add endpoint
     .auth(JwtAuth::from_env()?)                    // JWT auth (required if any JWT endpoint)
     .cors_allow_origins(&["https://example.com"])  // CORS origins (default: deny all)
+    .content_security_policy("default-src 'self'") // CSP (default: "default-src 'none'")
     .payload_limit(2 * 1024 * 1024)                // Body limit (default: 1 MB)
     .rate_limit_backend(InMemoryBackend::new())    // Rate limit backend (default: in-memory)
     .build()?                                      // Validates and builds
@@ -143,7 +144,29 @@ Service::builder()
 - `A3Result<T, E>` — Result alias (Ok = success, Err = structured error)
 - `HealthStatus::ok("version")` — Standard health check response
 
+## JWT Algorithms
+
+a3 supports HS256, RS256, and ES256:
+
+```rust
+// HS256 (default) — symmetric HMAC secret
+.auth(JwtAuth::new("my-secret"))
+.auth(JwtAuth::from_env()?)  // reads JWT_SECRET
+
+// RS256 — RSA public key (PEM)
+.auth(JwtAuth::from_rsa_pem(include_bytes!("public_key.pem"))?)
+
+// ES256 — EC public key (PEM, PKCS#8)
+.auth(JwtAuth::from_ec_pem(include_bytes!("public_key.pem"))?)
+```
+
+`from_env()` reads `JWT_ALGORITHM` (`HS256`/`RS256`/`ES256`, default: `HS256`):
+- HS256: `JWT_SECRET` (default: `"dev-secret"`)
+- RS256/ES256: `JWT_PUBLIC_KEY` (PEM string, required)
+
 ## Environment Variables
 
-- `JWT_SECRET` — HMAC secret for JWT validation (default: "dev-secret")
+- `JWT_ALGORITHM` — Algorithm for JWT validation: `HS256` (default), `RS256`, `ES256`
+- `JWT_SECRET` — HMAC secret for HS256 (default: "dev-secret")
+- `JWT_PUBLIC_KEY` — PEM public key for RS256/ES256
 - `RUST_LOG` — Log level filter (e.g., "info", "debug")

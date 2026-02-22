@@ -223,6 +223,94 @@ async fn service_builder_rejects_duplicate_endpoints() {
     assert!(result.is_err());
 }
 
+// ─── Tests: CSP Customization ────────────────────────────────────────────────
+
+#[tokio::test]
+async fn custom_csp_is_applied() {
+    let service = Service::builder()
+        .name("csp-test")
+        .version("0.1.0")
+        .endpoint(EndpointRegistration {
+            method: HttpMethod::Get,
+            path: "/health".to_string(),
+            handler: axum::routing::get(health_handler),
+            security: EndpointSecurity::None,
+            rate_limit: None,
+        })
+        .content_security_policy("default-src 'self'; script-src 'self'")
+        .build()
+        .expect("failed to build service");
+
+    let router = service.into_router();
+    let req = Request::builder()
+        .uri("/health")
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    let csp = resp
+        .headers()
+        .get("content-security-policy")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    // Custom CSP applied
+    assert!(csp.contains("default-src 'self'"));
+    assert!(csp.contains("script-src 'self'"));
+    // frame-ancestors auto-appended
+    assert!(csp.contains("frame-ancestors 'none'"));
+}
+
+#[tokio::test]
+async fn custom_csp_preserves_user_frame_ancestors() {
+    let service = Service::builder()
+        .name("csp-test-2")
+        .version("0.1.0")
+        .endpoint(EndpointRegistration {
+            method: HttpMethod::Get,
+            path: "/health".to_string(),
+            handler: axum::routing::get(health_handler),
+            security: EndpointSecurity::None,
+            rate_limit: None,
+        })
+        .content_security_policy("default-src 'self'; frame-ancestors 'self'")
+        .build()
+        .expect("failed to build service");
+
+    let router = service.into_router();
+    let req = Request::builder()
+        .uri("/health")
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    let csp = resp
+        .headers()
+        .get("content-security-policy")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    // User's frame-ancestors preserved (not doubled)
+    assert_eq!(csp, "default-src 'self'; frame-ancestors 'self'");
+}
+
+#[tokio::test]
+async fn default_csp_without_customization() {
+    let router = build_test_service().into_router();
+    let req = Request::builder()
+        .uri("/health")
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    let csp = resp
+        .headers()
+        .get("content-security-policy")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert_eq!(csp, "default-src 'none'; frame-ancestors 'none'");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 #[tokio::test]
 async fn not_found_response_is_not_retryable() {
     let router = build_test_service().into_router();
