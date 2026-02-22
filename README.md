@@ -38,7 +38,7 @@ The missing 3 points? CORS -- which has since been added as a deny-all default. 
 
 ## How acube solves this
 
-Security is the default, not an add-on. Every endpoint must declare its authentication and authorization at compile time -- there is no way to "forget" it. Headers, rate limiting, CORS, and input sanitization are injected automatically. You opt out explicitly, not in.
+acube is a server framework **of AI, by AI, for AI** — designed by AI, built by AI, and optimized for AI to generate secure code. Security is the default, not an add-on. Every endpoint must declare its authentication and authorization at compile time — there is no way to "forget" it. Headers, rate limiting, CORS, and input sanitization are injected automatically. You opt out explicitly, not in.
 
 ## Install
 
