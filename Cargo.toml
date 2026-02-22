@@ -1,5 +1,6 @@
 [workspace]
 members = ["a3", "a3-macros"]
+exclude = ["todo-app/backend"]
 resolver = "2"
 
 [workspace.package]

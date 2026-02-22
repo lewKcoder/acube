@@ -64,6 +64,7 @@ pub struct ServiceBuilder {
     payload_limit: usize,
     cors_origins: Vec<String>,
     csp: String,
+    extensions: Vec<Box<dyn FnOnce(Router) -> Router + Send>>,
 }
 
 impl ServiceBuilder {
@@ -77,6 +78,7 @@ impl ServiceBuilder {
             payload_limit: DEFAULT_PAYLOAD_LIMIT,
             cors_origins: Vec::new(),
             csp: DEFAULT_CSP.to_string(),
+            extensions: Vec::new(),
         }
     }
 
@@ -149,6 +151,33 @@ impl ServiceBuilder {
         self
     }
 
+    /// Add shared application state, accessible via `axum::extract::Extension<T>`.
+    ///
+    /// Can be called multiple times with different types.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let service = Service::builder()
+    ///     .name("my-app")
+    ///     .version("1.0.0")
+    ///     .state(pool)
+    ///     .endpoint(my_handler())
+    ///     .build()?;
+    ///
+    /// // In handler:
+    /// async fn my_handler(
+    ///     ctx: A3Context,
+    ///     axum::extract::Extension(pool): axum::extract::Extension<SqlitePool>,
+    /// ) -> ... { }
+    /// ```
+    pub fn state<T: Clone + Send + Sync + 'static>(mut self, value: T) -> Self {
+        self.extensions.push(Box::new(move |router: Router| {
+            router.layer(axum::extract::Extension(value))
+        }));
+        self
+    }
+
     /// Build the service, performing startup contract validation.
     pub fn build(self) -> Result<Service, ServiceBuildError> {
         let name = self.name.ok_or(ServiceBuildError::MissingField("name"))?;
@@ -187,6 +216,7 @@ impl ServiceBuilder {
             payload_limit: self.payload_limit,
             cors_origins: self.cors_origins,
             csp: self.csp,
+            extensions: self.extensions,
         })
     }
 }
@@ -214,6 +244,7 @@ pub struct Service {
     payload_limit: usize,
     cors_origins: Vec<String>,
     csp: String,
+    extensions: Vec<Box<dyn FnOnce(Router) -> Router + Send>>,
 }
 
 impl Service {
@@ -291,8 +322,13 @@ impl Service {
         };
         router = router.fallback(fallback_handler);
 
+        // Apply user-provided shared state (Extension layers)
+        for ext in self.extensions {
+            router = ext(router);
+        }
+
         // Layers are applied in reverse order: last added = outermost.
-        // Request flow: cors → request_id → body_limit → security_headers → catch_panic → handler
+        // Request flow: cors → request_id → body_limit → security_headers → catch_panic → [extensions] → handler
 
         // Panic handler (innermost — catches panics, response flows through outer layers)
         router = router.layer(CatchPanicLayer::custom(panic_handler));

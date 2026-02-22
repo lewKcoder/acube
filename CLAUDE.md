@@ -129,12 +129,39 @@ Service::builder()
     .name("service-name")                          // Required
     .version("1.0.0")                              // Required
     .endpoint(handler_fn())                        // Add endpoint
+    .state(pool)                                   // Shared state (Extension<T>)
     .auth(JwtAuth::from_env()?)                    // JWT auth (required if any JWT endpoint)
     .cors_allow_origins(&["https://example.com"])  // CORS origins (default: deny all)
     .content_security_policy("default-src 'self'") // CSP (default: "default-src 'none'")
     .payload_limit(2 * 1024 * 1024)                // Body limit (default: 1 MB)
     .rate_limit_backend(InMemoryBackend::new())    // Rate limit backend (default: in-memory)
     .build()?                                      // Validates and builds
+```
+
+`.state(value)` adds shared application state accessible via `axum::extract::Extension<T>` in handlers.
+Can be called multiple times with different types. The value must be `Clone + Send + Sync + 'static`.
+
+```rust
+// Builder
+let service = Service::builder()
+    .name("my-app")
+    .version("1.0.0")
+    .state(pool)       // SqlitePool
+    .state(config)     // AppConfig
+    .endpoint(handler())
+    .build()?;
+
+a3::serve(service, "0.0.0.0:3000").await
+
+// Handler — extract with Extension<T>
+#[a3_endpoint(GET "/items")]
+#[a3_security(jwt, scopes = ["items:read"])]
+async fn handler(
+    ctx: A3Context,
+    axum::extract::Extension(pool): axum::extract::Extension<SqlitePool>,
+) -> A3Result<Json<Vec<Item>>, ItemError> {
+    // use pool...
+}
 ```
 
 ## Response Types
@@ -163,6 +190,54 @@ a3 supports HS256, RS256, and ES256:
 `from_env()` reads `JWT_ALGORITHM` (`HS256`/`RS256`/`ES256`, default: `HS256`):
 - HS256: `JWT_SECRET` (default: `"dev-secret"`)
 - RS256/ES256: `JWT_PUBLIC_KEY` (PEM string, required)
+
+## AuthIdentity
+
+When an endpoint has `#[a3_security(jwt, scopes = [...])]`, the authenticated identity is available via `ctx.auth`:
+
+```rust
+#[a3_endpoint(GET "/me")]
+#[a3_security(jwt, scopes = ["profile:read"])]
+async fn get_me(ctx: A3Context) -> A3Result<Json<Profile>, MyError> {
+    let identity = ctx.auth.as_ref().unwrap(); // Always Some for JWT endpoints
+    let user_id = &identity.subject;           // User ID from JWT "sub" claim
+    let scopes = &identity.scopes;             // Granted scopes
+    // ...
+}
+```
+
+- `ctx.auth` is `Option<AuthIdentity>` — `Some` for JWT endpoints, `None` for `#[a3_security(none)]`
+- `AuthIdentity.subject: String` — the JWT `sub` claim (typically user ID)
+- `AuthIdentity.scopes: Vec<String>` — the granted scopes
+
+## JWT Claims
+
+When issuing JWTs (e.g., login/register endpoints), use the `JwtClaims` struct:
+
+```rust
+use a3::prelude::*;   // JwtClaims, ScopeClaim are in the prelude
+use jsonwebtoken::{encode, EncodingKey, Header};
+
+let claims = JwtClaims {
+    sub: user_id.to_string(),                              // Subject (user ID)
+    scopes: ScopeClaim(vec!["tasks:*".to_string()]),       // Granted scopes
+    exp: Some(chrono::Utc::now().timestamp() as u64 + 86400), // Expiration (Unix timestamp)
+    iat: Some(chrono::Utc::now().timestamp() as u64),      // Issued at
+};
+
+let token = encode(
+    &Header::default(),
+    &claims,
+    &EncodingKey::from_secret(secret.as_bytes()),
+)?;
+```
+
+- `JwtClaims.sub: String` — subject (required)
+- `JwtClaims.scopes: ScopeClaim` — scopes as `ScopeClaim(Vec<String>)`
+- `JwtClaims.exp: Option<u64>` — expiration time (Unix timestamp)
+- `JwtClaims.iat: Option<u64>` — issued-at time (Unix timestamp)
+
+`ScopeClaim` wraps `Vec<String>` and deserializes from either a JSON array `["a", "b"]` or comma-separated string `"a,b"`.
 
 ## Environment Variables
 

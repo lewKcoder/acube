@@ -25,7 +25,9 @@ pub mod prelude {
     };
     pub use crate::runtime::{EndpointRegistration, Service};
     pub use crate::schema::{A3SchemaInfo, A3Validate, ValidationError};
-    pub use crate::security::{AuthIdentity, AuthProvider, JwtAuth, JwtAuthError, JwtClaims};
+    pub use crate::security::{
+        AuthIdentity, AuthProvider, JwtAuth, JwtAuthError, JwtClaims, ScopeClaim,
+    };
     pub use crate::types::*;
 
     pub use axum::extract::Json;
