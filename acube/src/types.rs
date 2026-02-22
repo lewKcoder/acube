@@ -1,10 +1,10 @@
-//! Core type definitions for the a³ framework.
+//! Core type definitions for the acube framework.
 
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use serde::{Deserialize, Serialize};
 
-/// HTTP methods supported by a³ endpoints.
+/// HTTP methods supported by acube endpoints.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HttpMethod {
     Get,
@@ -29,7 +29,7 @@ impl std::fmt::Display for HttpMethod {
 /// Security requirement for an endpoint (authentication).
 #[derive(Debug, Clone)]
 pub enum EndpointSecurity {
-    /// No authentication required (explicitly declared via `#[a3_security(none)]`).
+    /// No authentication required (explicitly declared via `#[acube_security(none)]`).
     None,
     /// JWT bearer token authentication.
     Jwt,
@@ -57,7 +57,7 @@ pub struct RateLimitConfig {
     pub window: std::time::Duration,
 }
 
-/// Structured error response returned by all a³ endpoints.
+/// Structured error response returned by all acube endpoints.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ErrorResponse {
     pub error: ErrorBody,
@@ -91,10 +91,10 @@ impl<T: Serialize> IntoResponse for Created<T> {
 ///
 /// # Example
 /// ```rust,ignore
-/// #[a3_endpoint(DELETE "/items/:id")]
-/// #[a3_security(jwt)]
-/// #[a3_authorize(scopes = ["items:delete"])]
-/// async fn delete_item(ctx: A3Context) -> A3Result<NoContent, ItemError> {
+/// #[acube_endpoint(DELETE "/items/:id")]
+/// #[acube_security(jwt)]
+/// #[acube_authorize(scopes = ["items:delete"])]
+/// async fn delete_item(ctx: AcubeContext) -> AcubeResult<NoContent, ItemError> {
 ///     // delete the item...
 ///     Ok(NoContent)
 /// }
@@ -108,8 +108,8 @@ impl IntoResponse for NoContent {
     }
 }
 
-/// Result type alias for a³ endpoint handlers.
-pub type A3Result<T, E> = Result<T, E>;
+/// Result type alias for acube endpoint handlers.
+pub type AcubeResult<T, E> = Result<T, E>;
 
 /// Uninhabitable error type for endpoints that never fail.
 pub enum Never {}

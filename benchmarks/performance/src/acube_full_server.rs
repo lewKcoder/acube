@@ -1,16 +1,16 @@
-use a3::prelude::*;
+use acube::prelude::*;
 use jsonwebtoken::{encode, EncodingKey, Header};
 
 // ─── Schema ─────────────────────────────────────────────────────────────────
 
-#[derive(A3Schema, Debug, Deserialize)]
+#[derive(AcubeSchema, Debug, Deserialize)]
 pub struct CreateTaskInput {
-    #[a3(min_length = 3, max_length = 50)]
-    #[a3(sanitize(trim))]
+    #[acube(min_length = 3, max_length = 50)]
+    #[acube(sanitize(trim))]
     pub name: String,
 
-    #[a3(max_length = 200)]
-    #[a3(sanitize(strip_html))]
+    #[acube(max_length = 200)]
+    #[acube(sanitize(strip_html))]
     pub description: String,
 }
 
@@ -23,30 +23,30 @@ pub struct TaskOutput {
 
 // ─── Errors ─────────────────────────────────────────────────────────────────
 
-#[derive(A3Error, Debug)]
+#[derive(AcubeError, Debug)]
 pub enum TaskError {
-    #[a3(status = 400, message = "Invalid task input")]
+    #[acube(status = 400, message = "Invalid task input")]
     InvalidInput,
 }
 
 // ─── Endpoints ──────────────────────────────────────────────────────────────
 
-#[a3_endpoint(GET "/health")]
-#[a3_security(none)]
-#[a3_authorize(public)]
-#[a3_rate_limit(none)]
-async fn health_check(_ctx: A3Context) -> A3Result<Json<HealthStatus>, Never> {
+#[acube_endpoint(GET "/health")]
+#[acube_security(none)]
+#[acube_authorize(public)]
+#[acube_rate_limit(none)]
+async fn health_check(_ctx: AcubeContext) -> AcubeResult<Json<HealthStatus>, Never> {
     Ok(Json(HealthStatus::ok("1.0.0")))
 }
 
-#[a3_endpoint(POST "/tasks")]
-#[a3_security(jwt)]
-#[a3_authorize(scopes = ["tasks:create"])]
-#[a3_rate_limit(100, per_minute)]
+#[acube_endpoint(POST "/tasks")]
+#[acube_security(jwt)]
+#[acube_authorize(scopes = ["tasks:create"])]
+#[acube_rate_limit(100, per_minute)]
 async fn create_task(
-    _ctx: A3Context,
+    _ctx: AcubeContext,
     input: Valid<CreateTaskInput>,
-) -> A3Result<Created<TaskOutput>, TaskError> {
+) -> AcubeResult<Created<TaskOutput>, TaskError> {
     let input = input.into_inner();
     Ok(Created(TaskOutput {
         id: "1".to_string(),
@@ -77,13 +77,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("JWT_TOKEN={}", token);
 
     let service = Service::builder()
-        .name("a3-full-bench")
+        .name("acube-full-bench")
         .version("1.0.0")
         .endpoint(health_check())
         .endpoint(create_task())
         .auth(JwtAuth::new(secret))
         .build()?;
 
-    eprintln!("a3_full_server listening on 0.0.0.0:3003");
-    a3::serve(service, "0.0.0.0:3003").await
+    eprintln!("acube_full_server listening on 0.0.0.0:3003");
+    acube::serve(service, "0.0.0.0:3003").await
 }

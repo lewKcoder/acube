@@ -1,4 +1,4 @@
-//! Implementation of `#[a3_endpoint]`, `#[a3_security]`, `#[a3_authorize]`, and `#[a3_rate_limit]`.
+//! Implementation of `#[acube_endpoint]`, `#[acube_security]`, `#[acube_authorize]`, and `#[acube_rate_limit]`.
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -32,28 +32,28 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream, syn::
     // Parse the annotated function
     let mut func: ItemFn = syn::parse2(item)?;
 
-    // Extract and remove #[a3_security(...)] from the function's attributes
-    let security_attr = extract_named_attr(&mut func.attrs, "a3_security");
+    // Extract and remove #[acube_security(...)] from the function's attributes
+    let security_attr = extract_named_attr(&mut func.attrs, "acube_security");
     let security = match security_attr {
         Some(attr) => parse_security(&attr)?,
         None => {
             return Err(syn::Error::new_spanned(
                 &func.sig.ident,
-                "a³ endpoint requires a security declaration.\n  \
-                 Add #[a3_security(jwt)] or #[a3_security(none)] to explicitly opt out.",
+                "acube endpoint requires a security declaration.\n  \
+                 Add #[acube_security(jwt)] or #[acube_security(none)] to explicitly opt out.",
             ));
         }
     };
 
-    // Extract and remove #[a3_authorize(...)] from the function's attributes
-    let authorize_attr = extract_named_attr(&mut func.attrs, "a3_authorize");
+    // Extract and remove #[acube_authorize(...)] from the function's attributes
+    let authorize_attr = extract_named_attr(&mut func.attrs, "acube_authorize");
     let authorization = match authorize_attr {
         Some(attr) => parse_authorize(&attr)?,
         None => {
             return Err(syn::Error::new_spanned(
                 &func.sig.ident,
-                "a³ endpoint requires an authorization declaration.\n  \
-                 Add #[a3_authorize(scopes = [...])] or #[a3_authorize(public)] to explicitly opt out.",
+                "acube endpoint requires an authorization declaration.\n  \
+                 Add #[acube_authorize(scopes = [...])] or #[acube_authorize(public)] to explicitly opt out.",
             ));
         }
     };
@@ -63,43 +63,43 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream, syn::
         (Security::None, Authorization::Scopes(_)) => {
             return Err(syn::Error::new_spanned(
                 &func.sig.ident,
-                "Cannot use #[a3_authorize(scopes = [...])] with #[a3_security(none)]. \
-                 Use #[a3_security(jwt)] for scope-protected endpoints.",
+                "Cannot use #[acube_authorize(scopes = [...])] with #[acube_security(none)]. \
+                 Use #[acube_security(jwt)] for scope-protected endpoints.",
             ));
         }
         (Security::None, Authorization::Role(_)) => {
             return Err(syn::Error::new_spanned(
                 &func.sig.ident,
-                "Cannot use #[a3_authorize(role = \"...\")] with #[a3_security(none)]. \
-                 Use #[a3_security(jwt)] for role-protected endpoints.",
+                "Cannot use #[acube_authorize(role = \"...\")] with #[acube_security(none)]. \
+                 Use #[acube_security(jwt)] for role-protected endpoints.",
             ));
         }
         (Security::None, Authorization::Authenticated) => {
             return Err(syn::Error::new_spanned(
                 &func.sig.ident,
-                "Cannot use #[a3_authorize(authenticated)] with #[a3_security(none)]. \
-                 Use #[a3_security(jwt)] for authenticated endpoints.",
+                "Cannot use #[acube_authorize(authenticated)] with #[acube_security(none)]. \
+                 Use #[acube_security(jwt)] for authenticated endpoints.",
             ));
         }
         (Security::None, Authorization::Custom(_)) => {
             return Err(syn::Error::new_spanned(
                 &func.sig.ident,
-                "Cannot use #[a3_authorize(custom = \"...\")] with #[a3_security(none)]. \
-                 Custom authorization requires #[a3_security(jwt)].",
+                "Cannot use #[acube_authorize(custom = \"...\")] with #[acube_security(none)]. \
+                 Custom authorization requires #[acube_security(jwt)].",
             ));
         }
         (Security::Jwt, Authorization::Public) => {
             return Err(syn::Error::new_spanned(
                 &func.sig.ident,
-                "Cannot use #[a3_authorize(public)] with #[a3_security(jwt)]. \
-                 Use #[a3_security(none)] for public endpoints.",
+                "Cannot use #[acube_authorize(public)] with #[acube_security(jwt)]. \
+                 Use #[acube_security(none)] for public endpoints.",
             ));
         }
         _ => {}
     }
 
-    // Extract and remove #[a3_rate_limit(...)] from the function's attributes
-    let rate_limit_attr = extract_named_attr(&mut func.attrs, "a3_rate_limit");
+    // Extract and remove #[acube_rate_limit(...)] from the function's attributes
+    let rate_limit_attr = extract_named_attr(&mut func.attrs, "acube_rate_limit");
     let rate_limit = match rate_limit_attr {
         Some(attr) => parse_rate_limit(&attr)?,
         None => RateLimit::Config {
@@ -115,15 +115,15 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream, syn::
     // Generate code
     let fn_name = func.sig.ident.clone();
     let fn_vis = func.vis.clone();
-    let handler_name = format_ident!("__a3_impl_{}", fn_name);
+    let handler_name = format_ident!("__acube_impl_{}", fn_name);
 
     let mut handler_fn = func;
 
-    // For custom auth, rename to __a3_inner_ and generate a wrapper __a3_impl_
-    // For regular auth, rename to __a3_impl_ directly
+    // For custom auth, rename to __acube_inner_ and generate a wrapper __acube_impl_
+    // For regular auth, rename to __acube_impl_ directly
     let custom_wrapper = if let Authorization::Custom(ref func_name) = authorization {
         let custom_fn = format_ident!("{}", func_name);
-        let inner_name = format_ident!("__a3_inner_{}", fn_name);
+        let inner_name = format_ident!("__acube_inner_{}", fn_name);
         handler_fn.sig.ident = inner_name.clone();
 
         // Build wrapper params and forward args
@@ -134,7 +134,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream, syn::
         for (i, arg) in handler_fn.sig.inputs.iter().enumerate() {
             if let syn::FnArg::Typed(pt) = arg {
                 let ty = &pt.ty;
-                let arg_name = format_ident!("__a3_param_{}", i);
+                let arg_name = format_ident!("__acube_param_{}", i);
                 wrapper_params.push(quote! { #arg_name: #ty });
                 forward_args.push(quote! { #arg_name });
                 if i == 0 {
@@ -143,17 +143,17 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream, syn::
             }
         }
 
-        let ctx_arg = ctx_arg.expect("endpoint must have at least one parameter (A3Context)");
+        let ctx_arg = ctx_arg.expect("endpoint must have at least one parameter (AcubeContext)");
 
         quote! {
             async fn #handler_name(#(#wrapper_params),*) -> ::axum::response::Response {
                 use ::axum::response::IntoResponse;
-                if let Err(__a3_auth_err) = #custom_fn(&#ctx_arg).await {
-                    return __a3_auth_err.into_response();
+                if let Err(__acube_auth_err) = #custom_fn(&#ctx_arg).await {
+                    return __acube_auth_err.into_response();
                 }
                 match #inner_name(#(#forward_args),*).await {
-                    Ok(__a3_ok) => __a3_ok.into_response(),
-                    Err(__a3_err) => __a3_err.into_response(),
+                    Ok(__acube_ok) => __acube_ok.into_response(),
+                    Err(__acube_err) => __acube_err.into_response(),
                 }
             }
         }
@@ -177,38 +177,38 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream, syn::
         }
     };
 
-    // Generate the axum routing function (via a3 re-export)
+    // Generate the axum routing function (via acube re-export)
     let route_fn = match method_ident.to_string().as_str() {
-        "GET" => quote! { a3::axum::routing::get },
-        "POST" => quote! { a3::axum::routing::post },
-        "PUT" => quote! { a3::axum::routing::put },
-        "PATCH" => quote! { a3::axum::routing::patch },
-        "DELETE" => quote! { a3::axum::routing::delete },
+        "GET" => quote! { acube::axum::routing::get },
+        "POST" => quote! { acube::axum::routing::post },
+        "PUT" => quote! { acube::axum::routing::put },
+        "PATCH" => quote! { acube::axum::routing::patch },
+        "DELETE" => quote! { acube::axum::routing::delete },
         _ => unreachable!(),
     };
 
     // Generate security expression
     let security_expr = match security {
-        Security::None => quote! { a3::types::EndpointSecurity::None },
-        Security::Jwt => quote! { a3::types::EndpointSecurity::Jwt },
+        Security::None => quote! { acube::types::EndpointSecurity::None },
+        Security::Jwt => quote! { acube::types::EndpointSecurity::Jwt },
     };
 
     // Generate authorization expression
     let authorization_expr = match &authorization {
-        Authorization::Public => quote! { a3::types::EndpointAuthorization::Public },
+        Authorization::Public => quote! { acube::types::EndpointAuthorization::Public },
         Authorization::Authenticated => {
-            quote! { a3::types::EndpointAuthorization::Authenticated }
+            quote! { acube::types::EndpointAuthorization::Authenticated }
         }
         Authorization::Scopes(scopes) => {
             let scope_strs: Vec<_> = scopes.iter().map(|s| quote!(#s.to_string())).collect();
-            quote! { a3::types::EndpointAuthorization::Scopes(vec![#(#scope_strs),*]) }
+            quote! { acube::types::EndpointAuthorization::Scopes(vec![#(#scope_strs),*]) }
         }
         Authorization::Role(role) => {
-            quote! { a3::types::EndpointAuthorization::Role(#role.to_string()) }
+            quote! { acube::types::EndpointAuthorization::Role(#role.to_string()) }
         }
         Authorization::Custom(_) => {
             // Custom auth is checked in the handler wrapper; middleware just verifies JWT
-            quote! { a3::types::EndpointAuthorization::Authenticated }
+            quote! { acube::types::EndpointAuthorization::Authenticated }
         }
     };
 
@@ -223,7 +223,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream, syn::
                 _ => 60,
             };
             quote! {
-                Some(a3::types::RateLimitConfig {
+                Some(acube::types::RateLimitConfig {
                     max_requests: #count,
                     window: ::std::time::Duration::from_secs(#secs),
                 })
@@ -233,7 +233,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream, syn::
 
     // Generate OpenAPI metadata expression
     let request_schema_expr = match &valid_type {
-        Some(ty) => quote! { Some(<#ty as a3::schema::A3SchemaInfo>::openapi_schema()) },
+        Some(ty) => quote! { Some(<#ty as acube::schema::AcubeSchemaInfo>::openapi_schema()) },
         None => quote! { None },
     };
     let request_schema_name_expr = match &valid_type {
@@ -241,7 +241,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream, syn::
         None => quote! { None },
     };
     let error_responses_expr = match &error_type {
-        Some(ty) => quote! { <#ty as a3::error::A3ErrorInfo>::openapi_responses() },
+        Some(ty) => quote! { <#ty as acube::error::AcubeErrorInfo>::openapi_responses() },
         None => quote! { vec![] },
     };
 
@@ -257,15 +257,15 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream, syn::
         #custom_wrapper
 
         /// Create an endpoint registration for this handler.
-        #fn_vis fn #fn_name() -> a3::runtime::EndpointRegistration {
-            a3::runtime::EndpointRegistration {
-                method: a3::types::HttpMethod::#method_variant,
+        #fn_vis fn #fn_name() -> acube::runtime::EndpointRegistration {
+            acube::runtime::EndpointRegistration {
+                method: acube::types::HttpMethod::#method_variant,
                 path: #path.to_string(),
                 handler: #route_fn(#handler_name),
                 security: #security_expr,
                 authorization: #authorization_expr,
                 rate_limit: #rate_limit_expr,
-                openapi: Some(a3::runtime::EndpointOpenApi {
+                openapi: Some(acube::runtime::EndpointOpenApi {
                     request_schema: #request_schema_expr,
                     request_schema_name: #request_schema_name_expr,
                     error_responses: #error_responses_expr,
@@ -304,7 +304,7 @@ fn parse_return_type(func: &ItemFn) -> (u16, Option<Type>, bool) {
         _ => return (200, None, true),
     };
 
-    // Expect A3Result<T, E> which is Result<T, E>
+    // Expect AcubeResult<T, E> which is Result<T, E>
     let type_path = match ret {
         Type::Path(tp) => tp,
         _ => return (200, None, true),
@@ -315,8 +315,8 @@ fn parse_return_type(func: &ItemFn) -> (u16, Option<Type>, bool) {
         None => return (200, None, true),
     };
 
-    // Accept both A3Result and Result
-    if last_seg.ident != "A3Result" && last_seg.ident != "Result" {
+    // Accept both AcubeResult and Result
+    if last_seg.ident != "AcubeResult" && last_seg.ident != "Result" {
         return (200, None, true);
     }
 
@@ -389,7 +389,7 @@ fn parse_endpoint_attr(attr: TokenStream) -> Result<(Ident, String), syn::Error>
     if tokens.len() < 2 {
         return Err(syn::Error::new(
             proc_macro2::Span::call_site(),
-            "Expected: #[a3_endpoint(METHOD \"/path\")]",
+            "Expected: #[acube_endpoint(METHOD \"/path\")]",
         ));
     }
 
@@ -433,7 +433,7 @@ fn extract_named_attr(attrs: &mut Vec<Attribute>, name: &str) -> Option<Attribut
     Some(attrs.remove(idx))
 }
 
-/// Parse `#[a3_security(jwt)]` or `#[a3_security(none)]`.
+/// Parse `#[acube_security(jwt)]` or `#[acube_security(none)]`.
 ///
 /// Produces a helpful error if the legacy `scopes = [...]` syntax is used.
 fn parse_security(attr: &Attribute) -> Result<Security, syn::Error> {
@@ -451,8 +451,8 @@ fn parse_security(attr: &Attribute) -> Result<Security, syn::Error> {
                             if key == "scopes" {
                                 return Err(syn::Error::new(
                                     comma_span,
-                                    "Scopes have moved to #[a3_authorize(scopes = [...])]. \
-                                     Use #[a3_security(jwt)] for authentication only.",
+                                    "Scopes have moved to #[acube_authorize(scopes = [...])]. \
+                                     Use #[acube_security(jwt)] for authentication only.",
                                 ));
                             }
                         }
@@ -468,8 +468,8 @@ fn parse_security(attr: &Attribute) -> Result<Security, syn::Error> {
     })
 }
 
-/// Parse `#[a3_authorize(public)]`, `#[a3_authorize(authenticated)]`,
-/// `#[a3_authorize(scopes = ["..."])]`, or `#[a3_authorize(role = "...")]`.
+/// Parse `#[acube_authorize(public)]`, `#[acube_authorize(authenticated)]`,
+/// `#[acube_authorize(scopes = ["..."])]`, or `#[acube_authorize(role = "...")]`.
 fn parse_authorize(attr: &Attribute) -> Result<Authorization, syn::Error> {
     attr.parse_args_with(|input: syn::parse::ParseStream| {
         let ident: Ident = input.parse()?;
@@ -511,7 +511,7 @@ fn parse_authorize(attr: &Attribute) -> Result<Authorization, syn::Error> {
     })
 }
 
-/// Parse `#[a3_rate_limit(N, per_minute)]` or `#[a3_rate_limit(none)]`.
+/// Parse `#[acube_rate_limit(N, per_minute)]` or `#[acube_rate_limit(none)]`.
 fn parse_rate_limit(attr: &Attribute) -> Result<RateLimit, syn::Error> {
     attr.parse_args_with(|input: syn::parse::ParseStream| {
         // Check for "none"

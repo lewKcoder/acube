@@ -4,7 +4,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process;
 
-const FALLBACK_TEMPLATE: &str = include_str!("../../a3/templates/AI_INSTRUCTIONS.md");
+const FALLBACK_TEMPLATE: &str = include_str!("../../acube/templates/AI_INSTRUCTIONS.md");
 
 const AI_FILES: &[&str] = &[
     "CLAUDE.md",
@@ -15,13 +15,13 @@ const AI_FILES: &[&str] = &[
     ".windsurfrules",
 ];
 
-/// Try to find the live AI_INSTRUCTIONS.md template from the a3 workspace.
-/// Walks up from `start` looking for `a3/templates/AI_INSTRUCTIONS.md`.
+/// Try to find the live AI_INSTRUCTIONS.md template from the acube workspace.
+/// Walks up from `start` looking for `acube/templates/AI_INSTRUCTIONS.md`.
 /// Returns the file contents if found, otherwise None.
 fn find_live_template(start: &Path) -> Option<String> {
     let mut dir = start.to_path_buf();
     loop {
-        let candidate = dir.join("a3/templates/AI_INSTRUCTIONS.md");
+        let candidate = dir.join("acube/templates/AI_INSTRUCTIONS.md");
         if candidate.is_file() {
             return fs::read_to_string(&candidate).ok();
         }
@@ -39,7 +39,7 @@ fn get_template() -> String {
         return live;
     }
 
-    // Also try from the cargo-a3 binary's original source location (compile-time)
+    // Also try from the cargo-acube binary's original source location (compile-time)
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     if let Some(live) = find_live_template(&manifest_dir) {
         return live;
@@ -51,16 +51,16 @@ fn get_template() -> String {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
-    // cargo passes "a3" as the first real arg, then the subcommand
+    // cargo passes "acube" as the first real arg, then the subcommand
     let cmd_args: Vec<&str> = args.iter().skip(1).map(|s| s.as_str()).collect();
 
     match cmd_args.as_slice() {
-        ["a3", "init"] => run_init(),
-        ["a3", "new", name] => run_new(name),
+        ["acube", "init"] => run_init(),
+        ["acube", "new", name] => run_new(name),
         _ => {
             eprintln!("Usage:");
-            eprintln!("  cargo a3 init              Generate AI instruction files");
-            eprintln!("  cargo a3 new <project>     Create a new a3 project");
+            eprintln!("  cargo acube init              Generate AI instruction files");
+            eprintln!("  cargo acube new <project>     Create a new acube project");
             process::exit(1);
         }
     }
@@ -93,7 +93,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-a3 = "0.1.0"
+acube = "0.1.0"
 axum = "0.7"
 serde = {{ version = "1", features = ["derive"] }}
 tokio = {{ version = "1", features = ["full"] }}
@@ -103,24 +103,24 @@ tokio = {{ version = "1", features = ["full"] }}
 
     // src/main.rs
     let main_rs = format!(
-        r#"use a3::prelude::*;
+        r#"use acube::prelude::*;
 
-#[a3_endpoint(GET "/health")]
-#[a3_security(none)]
-#[a3_authorize(public)]
-async fn health(_ctx: A3Context) -> A3Result<Json<HealthStatus>, Never> {{
+#[acube_endpoint(GET "/health")]
+#[acube_security(none)]
+#[acube_authorize(public)]
+async fn health(_ctx: AcubeContext) -> AcubeResult<Json<HealthStatus>, Never> {{
     Ok(Json(HealthStatus::ok("0.1.0")))
 }}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {{
-    a3::init_tracing();
+    acube::init_tracing();
     let service = Service::builder()
         .name("{pkg_name}")
         .version("0.1.0")
         .endpoint(health())
         .build()?;
-    a3::serve(service, "0.0.0.0:3000").await
+    acube::serve(service, "0.0.0.0:3000").await
 }}
 "#
     );
@@ -148,7 +148,7 @@ RUST_LOG=info
         "\
 # {pkg_name}
 
-Built with a\u{b3} — AI Security Framework for Rust.
+Built with acube — AI Security Framework for Rust.
 
 ## Getting Started
 
@@ -181,7 +181,7 @@ curl http://localhost:3000/health
         write_file(&path, &template);
     }
 
-    println!("a\u{b3} project '{}' created:", pkg_name);
+    println!("acube project '{}' created:", pkg_name);
     println!();
     println!("  {}/", name);
     println!("  \u{251c}\u{2500}\u{2500} Cargo.toml");
@@ -238,7 +238,7 @@ fn run_init() {
     }
 
     println!();
-    println!("a\u{b3} AI instructions generated:");
+    println!("acube AI instructions generated:");
     for file in &created {
         println!("  Created {}", file);
     }

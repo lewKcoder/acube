@@ -1,8 +1,3 @@
-//! Minimal acube example — health check endpoint with security headers.
-//!
-//! Run: `cargo run --example hello -p acube`
-//! Test: `curl -i http://localhost:3000/health`
-
 use acube::prelude::*;
 
 #[acube_endpoint(GET "/health")]
@@ -10,18 +5,17 @@ use acube::prelude::*;
 #[acube_authorize(public)]
 #[acube_rate_limit(none)]
 async fn health_check(_ctx: AcubeContext) -> AcubeResult<Json<HealthStatus>, Never> {
-    Ok(Json(HealthStatus::ok("0.1.0")))
+    Ok(Json(HealthStatus::ok("1.0.0")))
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    acube::init_tracing();
-
     let service = Service::builder()
-        .name("hello-service")
-        .version("0.1.0")
+        .name("acube-minimal-bench")
+        .version("1.0.0")
         .endpoint(health_check())
         .build()?;
 
-    acube::serve(service, "0.0.0.0:3000").await
+    eprintln!("acube_minimal_server listening on 0.0.0.0:3002");
+    acube::serve(service, "0.0.0.0:3002").await
 }

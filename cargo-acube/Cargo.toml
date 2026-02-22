@@ -1,4 +1,4 @@
 [package]
-name = "cargo-a3"
+name = "cargo-acube"
 version = "0.1.0"
 edition = "2021"

@@ -1,11 +1,11 @@
-//! Integration tests for the a³ framework (Phase 0).
+//! Integration tests for the acube framework (Phase 0).
 
-use a3::prelude::*;
+use acube::prelude::*;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
 
-fn build_test_service() -> a3::runtime::Service {
+fn build_test_service() -> acube::runtime::Service {
     Service::builder()
         .name("test-service")
         .version("0.1.0")

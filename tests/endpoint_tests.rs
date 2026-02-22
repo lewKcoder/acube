@@ -1,6 +1,6 @@
 //! Phase 2 integration tests — endpoint macros, auth enforcement, validation, structured errors.
 
-use a3::prelude::*;
+use acube::prelude::*;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -13,19 +13,19 @@ impl AuthProvider for TestAuth {
     fn authenticate(
         &self,
         req: &axum::http::Request<axum::body::Body>,
-    ) -> Result<AuthIdentity, a3::security::AuthError> {
+    ) -> Result<AuthIdentity, acube::security::AuthError> {
         let header = req
             .headers()
             .get(axum::http::header::AUTHORIZATION)
             .and_then(|v| v.to_str().ok())
-            .ok_or(a3::security::AuthError::MissingToken)?;
+            .ok_or(acube::security::AuthError::MissingToken)?;
 
         if !header.starts_with("Bearer ") {
-            return Err(a3::security::AuthError::InvalidToken);
+            return Err(acube::security::AuthError::InvalidToken);
         }
         let token = &header[7..];
         if token.is_empty() {
-            return Err(a3::security::AuthError::InvalidToken);
+            return Err(acube::security::AuthError::InvalidToken);
         }
 
         Ok(AuthIdentity {
@@ -38,48 +38,48 @@ impl AuthProvider for TestAuth {
 
 // ─── Test schema ─────────────────────────────────────────────────────────────
 
-#[derive(A3Schema, Debug, Deserialize)]
+#[derive(AcubeSchema, Debug, Deserialize)]
 struct TestInput {
-    #[a3(min_length = 3, max_length = 30)]
-    #[a3(sanitize(trim))]
+    #[acube(min_length = 3, max_length = 30)]
+    #[acube(sanitize(trim))]
     pub name: String,
 
-    #[a3(format = "email")]
-    #[a3(sanitize(trim, lowercase))]
+    #[acube(format = "email")]
+    #[acube(sanitize(trim, lowercase))]
     pub email: String,
 }
 
 // ─── Test error ──────────────────────────────────────────────────────────────
 
-#[derive(A3Error, Debug)]
+#[derive(AcubeError, Debug)]
 enum TestError {
-    #[a3(status = 404, message = "Not found")]
+    #[acube(status = 404, message = "Not found")]
     NotFound,
 
-    #[a3(status = 409, message = "Already exists")]
+    #[acube(status = 409, message = "Already exists")]
     AlreadyExists,
 
-    #[a3(status = 502, retryable, message = "Backend unavailable")]
+    #[acube(status = 502, retryable, message = "Backend unavailable")]
     BackendError,
 }
 
 // ─── Endpoint handlers (using macros) ────────────────────────────────────────
 
-#[a3_endpoint(GET "/health")]
-#[a3_security(none)]
-#[a3_authorize(public)]
-#[a3_rate_limit(none)]
-async fn test_health(_ctx: A3Context) -> A3Result<Json<HealthStatus>, Never> {
+#[acube_endpoint(GET "/health")]
+#[acube_security(none)]
+#[acube_authorize(public)]
+#[acube_rate_limit(none)]
+async fn test_health(_ctx: AcubeContext) -> AcubeResult<Json<HealthStatus>, Never> {
     Ok(Json(HealthStatus::ok("test")))
 }
 
-#[a3_endpoint(POST "/items")]
-#[a3_security(jwt)]
-#[a3_authorize(scopes = ["users:create"])]
+#[acube_endpoint(POST "/items")]
+#[acube_security(jwt)]
+#[acube_authorize(scopes = ["users:create"])]
 async fn create_item(
-    _ctx: A3Context,
+    _ctx: AcubeContext,
     input: Valid<TestInput>,
-) -> A3Result<Created<serde_json::Value>, TestError> {
+) -> AcubeResult<Created<serde_json::Value>, TestError> {
     let input = input.into_inner();
     Ok(Created(serde_json::json!({
         "name": input.name,
@@ -87,11 +87,11 @@ async fn create_item(
     })))
 }
 
-#[a3_endpoint(GET "/items/:id")]
-#[a3_security(jwt)]
-#[a3_authorize(scopes = ["users:read"])]
-#[a3_rate_limit(none)]
-async fn get_item(ctx: A3Context) -> A3Result<Json<serde_json::Value>, TestError> {
+#[acube_endpoint(GET "/items/:id")]
+#[acube_security(jwt)]
+#[acube_authorize(scopes = ["users:read"])]
+#[acube_rate_limit(none)]
+async fn get_item(ctx: AcubeContext) -> AcubeResult<Json<serde_json::Value>, TestError> {
     let id: String = ctx.path("id");
     if id == "999" {
         return Err(TestError::NotFound);
@@ -99,17 +99,17 @@ async fn get_item(ctx: A3Context) -> A3Result<Json<serde_json::Value>, TestError
     Ok(Json(serde_json::json!({"id": id, "name": "test"})))
 }
 
-#[a3_endpoint(GET "/fail")]
-#[a3_security(none)]
-#[a3_authorize(public)]
-#[a3_rate_limit(none)]
-async fn fail_endpoint(_ctx: A3Context) -> A3Result<Json<serde_json::Value>, TestError> {
+#[acube_endpoint(GET "/fail")]
+#[acube_security(none)]
+#[acube_authorize(public)]
+#[acube_rate_limit(none)]
+async fn fail_endpoint(_ctx: AcubeContext) -> AcubeResult<Json<serde_json::Value>, TestError> {
     Err(TestError::BackendError)
 }
 
 // ─── Helper ──────────────────────────────────────────────────────────────────
 
-fn build_service() -> a3::runtime::Service {
+fn build_service() -> acube::runtime::Service {
     Service::builder()
         .name("test-service")
         .version("0.1.0")

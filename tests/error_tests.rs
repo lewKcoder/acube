@@ -1,7 +1,7 @@
-//! Tests for `#[derive(A3Error)]` — Phase 1b.
+//! Tests for `#[derive(AcubeError)]` — Phase 1b.
 
-use a3::error::A3ErrorInfo;
-use a3::prelude::*;
+use acube::error::AcubeErrorInfo;
+use acube::prelude::*;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::response::IntoResponse;
@@ -9,40 +9,40 @@ use tower::ServiceExt;
 
 // ─── Test enums ─────────────────────────────────────────────────────────────
 
-#[derive(A3Error, Debug)]
+#[derive(AcubeError, Debug)]
 pub enum UserError {
-    #[a3(status = 404, message = "User not found")]
+    #[acube(status = 404, message = "User not found")]
     NotFound,
 
-    #[a3(status = 409, message = "Username already taken")]
+    #[acube(status = 409, message = "Username already taken")]
     UsernameTaken,
 
-    #[a3(status = 409, message = "Email already registered")]
+    #[acube(status = 409, message = "Email already registered")]
     EmailTaken,
 
-    #[a3(status = 502, retryable, message = "Database unavailable")]
+    #[acube(status = 502, retryable, message = "Database unavailable")]
     DbError,
 }
 
-#[derive(A3Error, Debug)]
+#[derive(AcubeError, Debug)]
 pub enum AuthError {
-    #[a3(status = 401, message = "Invalid credentials")]
+    #[acube(status = 401, message = "Invalid credentials")]
     InvalidCredentials,
 
-    #[a3(status = 403, message = "Insufficient permissions")]
+    #[acube(status = 403, message = "Insufficient permissions")]
     Forbidden,
 
-    #[a3(status = 429, retryable, message = "Too many login attempts")]
+    #[acube(status = 429, retryable, message = "Too many login attempts")]
     RateLimited,
 }
 
-#[derive(A3Error, Debug)]
+#[derive(AcubeError, Debug)]
 pub enum SingleVariantError {
-    #[a3(status = 500, retryable, message = "Internal server error")]
+    #[acube(status = 500, retryable, message = "Internal server error")]
     Internal,
 }
 
-// ─── A3ErrorInfo trait tests ────────────────────────────────────────────────
+// ─── AcubeErrorInfo trait tests ────────────────────────────────────────────────
 
 #[test]
 fn status_code_404() {

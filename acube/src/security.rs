@@ -1,4 +1,4 @@
-//! Security types and middleware for the a³ framework.
+//! Security types and middleware for the acube framework.
 
 use axum::http::header;
 use jsonwebtoken::{DecodingKey, Validation};

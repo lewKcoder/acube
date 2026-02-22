@@ -1,11 +1,11 @@
 [package]
-name = "a3-performance-bench"
+name = "acube-performance-bench"
 version = "0.1.0"
 edition = "2021"
 publish = false
 
 [dependencies]
-a3 = { path = "../../a3" }
+acube = { path = "../../acube" }
 axum = "0.7"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
@@ -19,9 +19,9 @@ name = "raw_axum_server"
 path = "src/raw_axum_server.rs"
 
 [[bin]]
-name = "a3_minimal_server"
-path = "src/a3_minimal_server.rs"
+name = "acube_minimal_server"
+path = "src/acube_minimal_server.rs"
 
 [[bin]]
-name = "a3_full_server"
-path = "src/a3_full_server.rs"
+name = "acube_full_server"
+path = "src/acube_full_server.rs"

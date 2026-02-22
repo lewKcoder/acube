@@ -1,6 +1,6 @@
 //! Phase 3 pipeline tests — payload limits, scope verification, panic handler.
 
-use a3::prelude::*;
+use acube::prelude::*;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -13,19 +13,19 @@ impl AuthProvider for ScopedAuth {
     fn authenticate(
         &self,
         req: &axum::http::Request<axum::body::Body>,
-    ) -> Result<AuthIdentity, a3::security::AuthError> {
+    ) -> Result<AuthIdentity, acube::security::AuthError> {
         let header = req
             .headers()
             .get(axum::http::header::AUTHORIZATION)
             .and_then(|v| v.to_str().ok())
-            .ok_or(a3::security::AuthError::MissingToken)?;
+            .ok_or(acube::security::AuthError::MissingToken)?;
 
         if !header.starts_with("Bearer ") {
-            return Err(a3::security::AuthError::InvalidToken);
+            return Err(acube::security::AuthError::InvalidToken);
         }
         let token = &header[7..];
         if token.is_empty() {
-            return Err(a3::security::AuthError::InvalidToken);
+            return Err(acube::security::AuthError::InvalidToken);
         }
 
         // Different tokens grant different scopes/roles
@@ -51,99 +51,99 @@ impl AuthProvider for ScopedAuth {
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
 
-#[derive(A3Schema, Debug, Deserialize)]
+#[derive(AcubeSchema, Debug, Deserialize)]
 struct ItemInput {
-    #[a3(min_length = 1, max_length = 100)]
-    #[a3(sanitize(trim))]
+    #[acube(min_length = 1, max_length = 100)]
+    #[acube(sanitize(trim))]
     pub name: String,
 }
 
 // ─── Error ───────────────────────────────────────────────────────────────────
 
-#[derive(A3Error, Debug)]
+#[derive(AcubeError, Debug)]
 enum ItemError {
-    #[a3(status = 404, message = "Item not found")]
+    #[acube(status = 404, message = "Item not found")]
     NotFound,
 }
 
 // ─── Endpoints ───────────────────────────────────────────────────────────────
 
-#[a3_endpoint(GET "/health")]
-#[a3_security(none)]
-#[a3_authorize(public)]
-#[a3_rate_limit(none)]
-async fn health(_ctx: A3Context) -> A3Result<Json<HealthStatus>, Never> {
+#[acube_endpoint(GET "/health")]
+#[acube_security(none)]
+#[acube_authorize(public)]
+#[acube_rate_limit(none)]
+async fn health(_ctx: AcubeContext) -> AcubeResult<Json<HealthStatus>, Never> {
     Ok(Json(HealthStatus::ok("test")))
 }
 
-#[a3_endpoint(POST "/items")]
-#[a3_security(jwt)]
-#[a3_authorize(scopes = ["items:write"])]
-#[a3_rate_limit(none)]
+#[acube_endpoint(POST "/items")]
+#[acube_security(jwt)]
+#[acube_authorize(scopes = ["items:write"])]
+#[acube_rate_limit(none)]
 async fn create_item(
-    _ctx: A3Context,
+    _ctx: AcubeContext,
     input: Valid<ItemInput>,
-) -> A3Result<Created<serde_json::Value>, ItemError> {
+) -> AcubeResult<Created<serde_json::Value>, ItemError> {
     let input = input.into_inner();
     Ok(Created(serde_json::json!({"name": input.name})))
 }
 
-#[a3_endpoint(GET "/items/:id")]
-#[a3_security(jwt)]
-#[a3_authorize(scopes = ["items:read"])]
-#[a3_rate_limit(none)]
-async fn get_item(ctx: A3Context) -> A3Result<Json<serde_json::Value>, ItemError> {
+#[acube_endpoint(GET "/items/:id")]
+#[acube_security(jwt)]
+#[acube_authorize(scopes = ["items:read"])]
+#[acube_rate_limit(none)]
+async fn get_item(ctx: AcubeContext) -> AcubeResult<Json<serde_json::Value>, ItemError> {
     let id: String = ctx.path("id");
     Ok(Json(serde_json::json!({"id": id})))
 }
 
-#[a3_endpoint(GET "/panic")]
-#[a3_security(none)]
-#[a3_authorize(public)]
-#[a3_rate_limit(none)]
-async fn panic_endpoint(_ctx: A3Context) -> A3Result<Json<serde_json::Value>, Never> {
+#[acube_endpoint(GET "/panic")]
+#[acube_security(none)]
+#[acube_authorize(public)]
+#[acube_rate_limit(none)]
+async fn panic_endpoint(_ctx: AcubeContext) -> AcubeResult<Json<serde_json::Value>, Never> {
     panic!("intentional test panic");
 }
 
-#[a3_endpoint(POST "/limited")]
-#[a3_security(none)]
-#[a3_authorize(public)]
-#[a3_rate_limit(none)]
+#[acube_endpoint(POST "/limited")]
+#[acube_security(none)]
+#[acube_authorize(public)]
+#[acube_rate_limit(none)]
 async fn limited_endpoint(
-    _ctx: A3Context,
+    _ctx: AcubeContext,
     input: Valid<ItemInput>,
-) -> A3Result<Json<serde_json::Value>, Never> {
+) -> AcubeResult<Json<serde_json::Value>, Never> {
     let input = input.into_inner();
     Ok(Json(serde_json::json!({"name": input.name})))
 }
 
-#[a3_endpoint(POST "/rate-limited")]
-#[a3_security(none)]
-#[a3_authorize(public)]
-#[a3_rate_limit(2, per_minute)]
-async fn rate_limited(_ctx: A3Context) -> A3Result<Json<serde_json::Value>, Never> {
+#[acube_endpoint(POST "/rate-limited")]
+#[acube_security(none)]
+#[acube_authorize(public)]
+#[acube_rate_limit(2, per_minute)]
+async fn rate_limited(_ctx: AcubeContext) -> AcubeResult<Json<serde_json::Value>, Never> {
     Ok(Json(serde_json::json!({"ok": true})))
 }
 
-#[a3_endpoint(GET "/admin-only")]
-#[a3_security(jwt)]
-#[a3_authorize(role = "admin")]
-#[a3_rate_limit(none)]
-async fn admin_only(_ctx: A3Context) -> A3Result<Json<serde_json::Value>, Never> {
+#[acube_endpoint(GET "/admin-only")]
+#[acube_security(jwt)]
+#[acube_authorize(role = "admin")]
+#[acube_rate_limit(none)]
+async fn admin_only(_ctx: AcubeContext) -> AcubeResult<Json<serde_json::Value>, Never> {
     Ok(Json(serde_json::json!({"admin": true})))
 }
 
-#[a3_endpoint(GET "/auth-only")]
-#[a3_security(jwt)]
-#[a3_authorize(authenticated)]
-#[a3_rate_limit(none)]
-async fn auth_only(_ctx: A3Context) -> A3Result<Json<serde_json::Value>, Never> {
+#[acube_endpoint(GET "/auth-only")]
+#[acube_security(jwt)]
+#[acube_authorize(authenticated)]
+#[acube_rate_limit(none)]
+async fn auth_only(_ctx: AcubeContext) -> AcubeResult<Json<serde_json::Value>, Never> {
     Ok(Json(serde_json::json!({"authenticated": true})))
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-fn build_service() -> a3::runtime::Service {
+fn build_service() -> acube::runtime::Service {
     Service::builder()
         .name("pipeline-test")
         .version("0.1.0")
@@ -161,7 +161,7 @@ fn build_service() -> a3::runtime::Service {
         .expect("failed to build service")
 }
 
-fn build_default_limit_service() -> a3::runtime::Service {
+fn build_default_limit_service() -> acube::runtime::Service {
     Service::builder()
         .name("default-limit-test")
         .version("0.1.0")
@@ -700,57 +700,57 @@ use std::sync::{Arc, Mutex};
 
 type TestStore = Arc<Mutex<HashMap<String, String>>>;
 
-#[a3_endpoint(GET "/ctx-test/:id")]
-#[a3_security(jwt)]
-#[a3_authorize(authenticated)]
-#[a3_rate_limit(none)]
-async fn ctx_path_test(ctx: A3Context) -> A3Result<Json<serde_json::Value>, Never> {
+#[acube_endpoint(GET "/ctx-test/:id")]
+#[acube_security(jwt)]
+#[acube_authorize(authenticated)]
+#[acube_rate_limit(none)]
+async fn ctx_path_test(ctx: AcubeContext) -> AcubeResult<Json<serde_json::Value>, Never> {
     let id: String = ctx.path("id");
     let user_id = ctx.user_id().to_string();
     Ok(Json(serde_json::json!({"id": id, "user_id": user_id})))
 }
 
-#[a3_endpoint(GET "/ctx-state-test")]
-#[a3_security(jwt)]
-#[a3_authorize(authenticated)]
-#[a3_rate_limit(none)]
-async fn ctx_state_test(ctx: A3Context) -> A3Result<Json<serde_json::Value>, Never> {
+#[acube_endpoint(GET "/ctx-state-test")]
+#[acube_security(jwt)]
+#[acube_authorize(authenticated)]
+#[acube_rate_limit(none)]
+async fn ctx_state_test(ctx: AcubeContext) -> AcubeResult<Json<serde_json::Value>, Never> {
     let store = ctx.state::<TestStore>();
     let store = store.lock().unwrap();
     let count = store.len();
     Ok(Json(serde_json::json!({"count": count})))
 }
 
-#[a3_endpoint(DELETE "/ctx-delete/:id")]
-#[a3_security(jwt)]
-#[a3_authorize(authenticated)]
-#[a3_rate_limit(none)]
-async fn ctx_no_content(ctx: A3Context) -> A3Result<NoContent, ItemError> {
+#[acube_endpoint(DELETE "/ctx-delete/:id")]
+#[acube_security(jwt)]
+#[acube_authorize(authenticated)]
+#[acube_rate_limit(none)]
+async fn ctx_no_content(ctx: AcubeContext) -> AcubeResult<NoContent, ItemError> {
     let _id: String = ctx.path("id");
     Ok(NoContent)
 }
 
-#[derive(A3Schema, Debug, Deserialize)]
+#[derive(AcubeSchema, Debug, Deserialize)]
 struct UpdateInput {
-    #[a3(min_length = 1, max_length = 100)]
-    #[a3(sanitize(trim))]
+    #[acube(min_length = 1, max_length = 100)]
+    #[acube(sanitize(trim))]
     pub value: String,
 }
 
-#[a3_endpoint(PATCH "/ctx-update/:id")]
-#[a3_security(jwt)]
-#[a3_authorize(authenticated)]
-#[a3_rate_limit(none)]
+#[acube_endpoint(PATCH "/ctx-update/:id")]
+#[acube_security(jwt)]
+#[acube_authorize(authenticated)]
+#[acube_rate_limit(none)]
 async fn ctx_path_and_body(
-    ctx: A3Context,
+    ctx: AcubeContext,
     input: Valid<UpdateInput>,
-) -> A3Result<Json<serde_json::Value>, ItemError> {
+) -> AcubeResult<Json<serde_json::Value>, ItemError> {
     let id: String = ctx.path("id");
     let input = input.into_inner();
     Ok(Json(serde_json::json!({"id": id, "value": input.value})))
 }
 
-fn build_ctx_service() -> a3::runtime::Service {
+fn build_ctx_service() -> acube::runtime::Service {
     let store: TestStore = Arc::new(Mutex::new(HashMap::new()));
     store.lock().unwrap().insert("a".to_string(), "1".to_string());
     store.lock().unwrap().insert("b".to_string(), "2".to_string());
@@ -847,54 +847,54 @@ async fn path_and_body_work_together() {
 // ─── Tests: Custom Authorization ─────────────────────────────────────────────
 
 /// Custom auth function: only allows user "test-user" for resource "allowed-id"
-async fn check_owner(ctx: &A3Context) -> Result<(), A3AuthError> {
+async fn check_owner(ctx: &AcubeContext) -> Result<(), AcubeAuthError> {
     let id: String = ctx.path("id");
     let user_id = ctx.user_id();
     if id == "allowed-id" || user_id == "owner-user" {
         Ok(())
     } else {
-        Err(A3AuthError::Forbidden("Not the owner".into()))
+        Err(AcubeAuthError::Forbidden("Not the owner".into()))
     }
 }
 
-#[derive(A3Error, Debug)]
+#[derive(AcubeError, Debug)]
 enum CustomAuthError {
-    #[a3(status = 404, message = "Not found")]
+    #[acube(status = 404, message = "Not found")]
     NotFound,
 }
 
-#[a3_endpoint(GET "/custom-auth/:id")]
-#[a3_security(jwt)]
-#[a3_authorize(custom = "check_owner")]
-#[a3_rate_limit(none)]
-async fn custom_auth_endpoint(ctx: A3Context) -> A3Result<Json<serde_json::Value>, CustomAuthError> {
+#[acube_endpoint(GET "/custom-auth/:id")]
+#[acube_security(jwt)]
+#[acube_authorize(custom = "check_owner")]
+#[acube_rate_limit(none)]
+async fn custom_auth_endpoint(ctx: AcubeContext) -> AcubeResult<Json<serde_json::Value>, CustomAuthError> {
     let id: String = ctx.path("id");
     Ok(Json(serde_json::json!({"id": id})))
 }
 
 /// Custom auth function for endpoint with body
-async fn check_write_access(ctx: &A3Context) -> Result<(), A3AuthError> {
+async fn check_write_access(ctx: &AcubeContext) -> Result<(), AcubeAuthError> {
     let user_id = ctx.user_id();
     if user_id == "test-user" {
         Ok(())
     } else {
-        Err(A3AuthError::Forbidden("Write access denied".into()))
+        Err(AcubeAuthError::Forbidden("Write access denied".into()))
     }
 }
 
-#[a3_endpoint(POST "/custom-auth-body")]
-#[a3_security(jwt)]
-#[a3_authorize(custom = "check_write_access")]
-#[a3_rate_limit(none)]
+#[acube_endpoint(POST "/custom-auth-body")]
+#[acube_security(jwt)]
+#[acube_authorize(custom = "check_write_access")]
+#[acube_rate_limit(none)]
 async fn custom_auth_body_endpoint(
-    _ctx: A3Context,
+    _ctx: AcubeContext,
     input: Valid<ItemInput>,
-) -> A3Result<Created<serde_json::Value>, CustomAuthError> {
+) -> AcubeResult<Created<serde_json::Value>, CustomAuthError> {
     let input = input.into_inner();
     Ok(Created(serde_json::json!({"name": input.name})))
 }
 
-fn build_custom_auth_service() -> a3::runtime::Service {
+fn build_custom_auth_service() -> acube::runtime::Service {
     Service::builder()
         .name("custom-auth-test")
         .version("0.1.0")

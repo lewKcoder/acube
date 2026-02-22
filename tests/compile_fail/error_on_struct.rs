@@ -1,6 +1,6 @@
-use a3::prelude::*;
+use acube::prelude::*;
 
-#[derive(A3Error, Debug)]
+#[derive(AcubeError, Debug)]
 pub struct NotAnEnum {
     pub code: String,
 }

@@ -1,4 +1,4 @@
-//! Error types and traits for the a³ framework.
+//! Error types and traits for the acube framework.
 
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -14,8 +14,8 @@ pub struct OpenApiErrorVariant {
     pub retryable: bool,
 }
 
-/// Trait for a³ error types that can be converted to structured HTTP responses.
-pub trait A3ErrorInfo {
+/// Trait for acube error types that can be converted to structured HTTP responses.
+pub trait AcubeErrorInfo {
     /// HTTP status code for this error variant.
     fn status_code(&self) -> StatusCode;
     /// Human-readable error message (safe to expose to clients).
@@ -55,8 +55,8 @@ pub fn error_response(
     (status, axum::Json(body)).into_response()
 }
 
-/// Build an error response from an `A3ErrorInfo` implementor.
-pub fn into_a3_response(err: &(impl A3ErrorInfo + std::fmt::Debug), request_id: &str) -> Response {
+/// Build an error response from an `AcubeErrorInfo` implementor.
+pub fn into_acube_response(err: &(impl AcubeErrorInfo + std::fmt::Debug), request_id: &str) -> Response {
     error_response(
         err.status_code(),
         err.code(),
@@ -69,17 +69,17 @@ pub fn into_a3_response(err: &(impl A3ErrorInfo + std::fmt::Debug), request_id: 
 
 /// Error type for custom authorization functions.
 ///
-/// Used with `#[a3_authorize(custom = "fn_name")]` to return authorization failures.
+/// Used with `#[acube_authorize(custom = "fn_name")]` to return authorization failures.
 #[derive(Debug)]
-pub enum A3AuthError {
+pub enum AcubeAuthError {
     /// HTTP 403 Forbidden with custom message.
     Forbidden(String),
 }
 
-impl IntoResponse for A3AuthError {
+impl IntoResponse for AcubeAuthError {
     fn into_response(self) -> Response {
         match self {
-            A3AuthError::Forbidden(msg) => {
+            AcubeAuthError::Forbidden(msg) => {
                 let request_id = uuid::Uuid::new_v4().to_string();
                 error_response(
                     StatusCode::FORBIDDEN,
@@ -96,7 +96,7 @@ impl IntoResponse for A3AuthError {
 
 /// Framework-level errors (not user-defined).
 #[derive(Debug, thiserror::Error)]
-pub enum A3FrameworkError {
+pub enum AcubeFrameworkError {
     #[error("Not found")]
     NotFound,
     #[error("Method not allowed")]
@@ -115,7 +115,7 @@ pub enum A3FrameworkError {
     Internal,
 }
 
-impl A3ErrorInfo for A3FrameworkError {
+impl AcubeErrorInfo for AcubeFrameworkError {
     fn status_code(&self) -> StatusCode {
         match self {
             Self::NotFound => StatusCode::NOT_FOUND,

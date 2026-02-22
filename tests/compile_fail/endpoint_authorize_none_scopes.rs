@@ -1,9 +1,9 @@
-use a3::prelude::*;
+use acube::prelude::*;
 
-#[a3_endpoint(GET "/test")]
-#[a3_security(none)]
-#[a3_authorize(scopes = ["admin"])]
-async fn test_handler(_ctx: A3Context) -> A3Result<Json<serde_json::Value>, Never> {
+#[acube_endpoint(GET "/test")]
+#[acube_security(none)]
+#[acube_authorize(scopes = ["admin"])]
+async fn test_handler(_ctx: AcubeContext) -> AcubeResult<Json<serde_json::Value>, Never> {
     Ok(Json(serde_json::json!({"ok": true})))
 }
 

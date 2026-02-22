@@ -1,4 +1,4 @@
-//! Service builder and runtime for the a³ framework.
+//! Service builder and runtime for the acube framework.
 //!
 //! Pipeline stages (6段):
 //! ① Route Resolution
@@ -38,7 +38,7 @@ use crate::types::{EndpointAuthorization, EndpointSecurity, HttpMethod, RateLimi
 
 /// Type-erased container for shared application state registered via `Service::builder().state()`.
 ///
-/// Stored as a request extension so that `A3Context` can provide `ctx.state::<T>()`.
+/// Stored as a request extension so that `AcubeContext` can provide `ctx.state::<T>()`.
 #[derive(Clone, Default)]
 pub(crate) struct SharedState {
     inner: Arc<HashMap<TypeId, Box<dyn CloneableAny>>>,
@@ -98,7 +98,7 @@ pub struct EndpointOpenApi {
     pub content_type: Option<String>,
 }
 
-/// An a³ endpoint registration.
+/// An acube endpoint registration.
 pub struct EndpointRegistration {
     /// HTTP method.
     pub method: HttpMethod,
@@ -116,11 +116,11 @@ pub struct EndpointRegistration {
     pub openapi: Option<EndpointOpenApi>,
 }
 
-/// Builder for constructing an a³ `Service`.
+/// Builder for constructing an acube `Service`.
 /// Default Content-Security-Policy value.
 const DEFAULT_CSP: &str = "default-src 'none'; frame-ancestors 'none'";
 
-/// Builder for constructing an a³ `Service`.
+/// Builder for constructing an acube `Service`.
 pub struct ServiceBuilder {
     name: Option<String>,
     version: Option<String>,
@@ -251,7 +251,7 @@ impl ServiceBuilder {
     ///
     /// // In handler:
     /// async fn my_handler(
-    ///     ctx: A3Context,
+    ///     ctx: AcubeContext,
     ///     axum::extract::Extension(pool): axum::extract::Extension<SqlitePool>,
     /// ) -> ... { }
     /// ```
@@ -327,7 +327,7 @@ pub enum ServiceBuildError {
     MissingAuthProvider,
 }
 
-/// A fully configured a³ service ready to serve.
+/// A fully configured acube service ready to serve.
 pub struct Service {
     /// Service name.
     pub name: String,
@@ -626,7 +626,7 @@ impl Service {
                 tracing::warn!(
                     method = %ep.method,
                     path = %ep.path,
-                    "endpoint has no authentication (explicitly declared with #[a3_security(none)])"
+                    "endpoint has no authentication (explicitly declared with #[acube_security(none)])"
                 );
             }
         }

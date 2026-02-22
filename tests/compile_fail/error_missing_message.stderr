@@ -1,4 +1,4 @@
-error: A3Error variant `MissingMessage` requires #[a3(message = "...")]
+error: AcubeError variant `MissingMessage` requires #[acube(message = "...")]
  --> $WORKSPACE/tests/compile_fail/error_missing_message.rs
   |
   |     MissingMessage,

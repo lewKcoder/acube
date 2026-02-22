@@ -1,8 +1,8 @@
-use a3::prelude::*;
+use acube::prelude::*;
 
-#[derive(A3Error, Debug)]
+#[derive(AcubeError, Debug)]
 pub enum BadError {
-    #[a3(status = 500)]
+    #[acube(status = 500)]
     MissingMessage,
 }
 

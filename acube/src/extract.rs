@@ -1,7 +1,7 @@
-//! Axum extractors for the a³ framework.
+//! Axum extractors for the acube framework.
 //!
 //! - `Valid<T>` — Validated and sanitized request body
-//! - `A3Context` — Request context with request ID and auth identity
+//! - `AcubeContext` — Request context with request ID and auth identity
 
 use axum::async_trait;
 use axum::body::Bytes;
@@ -15,19 +15,19 @@ use uuid::Uuid;
 
 use crate::error::error_response;
 use crate::runtime::SharedState;
-use crate::schema::{check_unknown_fields, A3Validate, ValidationError};
+use crate::schema::{check_unknown_fields, AcubeValidate, ValidationError};
 use crate::security::AuthIdentity;
 
 /// Request ID stored in request extensions by the request ID middleware.
 #[derive(Debug, Clone)]
 pub struct RequestId(pub String);
 
-/// Request context available to all a³ endpoint handlers.
+/// Request context available to all acube endpoint handlers.
 ///
 /// Provides the request ID, optional authenticated identity, path parameters,
 /// and shared application state.
 #[derive(Clone)]
-pub struct A3Context {
+pub struct AcubeContext {
     /// Unique request identifier.
     pub request_id: String,
     /// Authenticated identity (if the endpoint requires auth and it succeeded).
@@ -38,9 +38,9 @@ pub struct A3Context {
     shared_state: SharedState,
 }
 
-impl std::fmt::Debug for A3Context {
+impl std::fmt::Debug for AcubeContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("A3Context")
+        f.debug_struct("AcubeContext")
             .field("request_id", &self.request_id)
             .field("auth", &self.auth)
             .field("path_params", &self.path_params)
@@ -48,13 +48,13 @@ impl std::fmt::Debug for A3Context {
     }
 }
 
-impl A3Context {
+impl AcubeContext {
     /// Get a path parameter by name, parsed to the desired type.
     ///
     /// # Panics
     /// Panics if the parameter is not found or cannot be parsed.
     /// This is intentional — missing path parameters are a developer configuration error,
-    /// and a³'s panic handler will return a structured 500 response.
+    /// and acube's panic handler will return a structured 500 response.
     ///
     /// # Example
     /// ```rust,ignore
@@ -97,7 +97,7 @@ impl A3Context {
     ///
     /// # Panics
     /// Panics if the endpoint is not authenticated. This is intentional —
-    /// calling `user_id()` on a `#[a3_security(none)]` endpoint is a developer error.
+    /// calling `user_id()` on a `#[acube_security(none)]` endpoint is a developer error.
     ///
     /// # Example
     /// ```rust,ignore
@@ -107,13 +107,13 @@ impl A3Context {
         &self
             .auth
             .as_ref()
-            .expect("user_id() called on unauthenticated endpoint — use #[a3_security(jwt)]")
+            .expect("user_id() called on unauthenticated endpoint — use #[acube_security(jwt)]")
             .subject
     }
 }
 
 #[async_trait]
-impl<S> FromRequestParts<S> for A3Context
+impl<S> FromRequestParts<S> for AcubeContext
 where
     S: Send + Sync,
 {
@@ -142,7 +142,7 @@ where
             .cloned()
             .unwrap_or_default();
 
-        Ok(A3Context {
+        Ok(AcubeContext {
             request_id,
             auth,
             path_params,
@@ -169,7 +169,7 @@ impl<T> Valid<T> {
 #[async_trait]
 impl<T, S> FromRequest<S> for Valid<T>
 where
-    T: DeserializeOwned + A3Validate + Send,
+    T: DeserializeOwned + AcubeValidate + Send,
     S: Send + Sync,
 {
     type Rejection = Response;

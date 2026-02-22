@@ -1,11 +1,11 @@
 [package]
-name = "a3"
+name = "acube"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-a3-macros = { path = "../a3-macros" }
+acube-macros = { path = "../acube-macros" }
 async-trait = "0.1"
 axum = "0.7"
 tokio = { version = "1", features = ["full"] }

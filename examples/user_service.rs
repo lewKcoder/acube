@@ -1,6 +1,6 @@
 //! User service example — CRUD + auth + validation.
 //!
-//! Run: `cargo run --example user_service -p a3`
+//! Run: `cargo run --example user_service -p acube`
 //!
 //! Test:
 //!   curl -i http://localhost:3000/health
@@ -11,24 +11,24 @@
 //!   curl -i http://localhost:3000/users/1 -H "Authorization: Bearer test-token"
 //!   curl -i -X DELETE http://localhost:3000/users/1 -H "Authorization: Bearer test-token"
 
-use a3::prelude::*;
+use acube::prelude::*;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 // ─── Schema definitions ─────────────────────────────────────────────────────
 
-#[derive(A3Schema, Debug, Deserialize)]
+#[derive(AcubeSchema, Debug, Deserialize)]
 pub struct CreateUserInput {
-    #[a3(min_length = 3, max_length = 30, pattern = "^[a-zA-Z0-9_]+$")]
-    #[a3(sanitize(trim))]
+    #[acube(min_length = 3, max_length = 30, pattern = "^[a-zA-Z0-9_]+$")]
+    #[acube(sanitize(trim))]
     pub username: String,
 
-    #[a3(format = "email", pii)]
-    #[a3(sanitize(trim, lowercase))]
+    #[acube(format = "email", pii)]
+    #[acube(sanitize(trim, lowercase))]
     pub email: String,
 
-    #[a3(min_length = 1, max_length = 100)]
-    #[a3(sanitize(trim, strip_html))]
+    #[acube(min_length = 1, max_length = 100)]
+    #[acube(sanitize(trim, strip_html))]
     pub display_name: String,
 }
 
@@ -43,18 +43,18 @@ pub struct UserOutput {
 
 // ─── Error definitions ──────────────────────────────────────────────────────
 
-#[derive(A3Error, Debug)]
+#[derive(AcubeError, Debug)]
 pub enum UserError {
-    #[a3(status = 404, message = "User not found")]
+    #[acube(status = 404, message = "User not found")]
     NotFound,
 
-    #[a3(status = 409, message = "Username already taken")]
+    #[acube(status = 409, message = "Username already taken")]
     UsernameTaken,
 
-    #[a3(status = 409, message = "Email already registered")]
+    #[acube(status = 409, message = "Email already registered")]
     EmailTaken,
 
-    #[a3(status = 502, retryable, message = "Database unavailable")]
+    #[acube(status = 502, retryable, message = "Database unavailable")]
     DbError,
 }
 
@@ -68,14 +68,14 @@ fn user_store() -> UserStore {
 
 // ─── Endpoints ──────────────────────────────────────────────────────────────
 
-#[a3_endpoint(POST "/users")]
-#[a3_security(jwt)]
-#[a3_authorize(scopes = ["users:create"])]
-#[a3_rate_limit(10, per_minute)]
+#[acube_endpoint(POST "/users")]
+#[acube_security(jwt)]
+#[acube_authorize(scopes = ["users:create"])]
+#[acube_rate_limit(10, per_minute)]
 async fn create_user(
-    ctx: A3Context,
+    ctx: AcubeContext,
     input: Valid<CreateUserInput>,
-) -> A3Result<Created<UserOutput>, UserError> {
+) -> AcubeResult<Created<UserOutput>, UserError> {
     let input = input.into_inner();
     let store = ctx.state::<UserStore>();
     let mut store = store.lock().unwrap();
@@ -101,10 +101,10 @@ async fn create_user(
     Ok(Created(user))
 }
 
-#[a3_endpoint(GET "/users/:id")]
-#[a3_security(jwt)]
-#[a3_authorize(scopes = ["users:read"])]
-async fn get_user(ctx: A3Context) -> A3Result<Json<UserOutput>, UserError> {
+#[acube_endpoint(GET "/users/:id")]
+#[acube_security(jwt)]
+#[acube_authorize(scopes = ["users:read"])]
+async fn get_user(ctx: AcubeContext) -> AcubeResult<Json<UserOutput>, UserError> {
     let id: String = ctx.path("id");
     let store = ctx.state::<UserStore>();
     let store = store.lock().unwrap();
@@ -112,10 +112,10 @@ async fn get_user(ctx: A3Context) -> A3Result<Json<UserOutput>, UserError> {
     Ok(Json(user))
 }
 
-#[a3_endpoint(DELETE "/users/:id")]
-#[a3_security(jwt)]
-#[a3_authorize(scopes = ["users:delete"])]
-async fn delete_user(ctx: A3Context) -> A3Result<NoContent, UserError> {
+#[acube_endpoint(DELETE "/users/:id")]
+#[acube_security(jwt)]
+#[acube_authorize(scopes = ["users:delete"])]
+async fn delete_user(ctx: AcubeContext) -> AcubeResult<NoContent, UserError> {
     let id: String = ctx.path("id");
     let store = ctx.state::<UserStore>();
     let mut store = store.lock().unwrap();
@@ -123,11 +123,11 @@ async fn delete_user(ctx: A3Context) -> A3Result<NoContent, UserError> {
     Ok(NoContent)
 }
 
-#[a3_endpoint(GET "/health")]
-#[a3_security(none)]
-#[a3_authorize(public)]
-#[a3_rate_limit(none)]
-async fn health_check(_ctx: A3Context) -> A3Result<Json<HealthStatus>, Never> {
+#[acube_endpoint(GET "/health")]
+#[acube_security(none)]
+#[acube_authorize(public)]
+#[acube_rate_limit(none)]
+async fn health_check(_ctx: AcubeContext) -> AcubeResult<Json<HealthStatus>, Never> {
     Ok(Json(HealthStatus::ok("1.0.0")))
 }
 
@@ -135,7 +135,7 @@ async fn health_check(_ctx: A3Context) -> A3Result<Json<HealthStatus>, Never> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    a3::init_tracing();
+    acube::init_tracing();
 
     let store = user_store();
 
@@ -152,5 +152,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .cors_allow_origins(&["http://localhost:3001"])
         .build()?;
 
-    a3::serve(service, "0.0.0.0:3000").await
+    acube::serve(service, "0.0.0.0:3000").await
 }

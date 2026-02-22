@@ -1,4 +1,4 @@
-error: A3Error can only be derived on enums
+error: AcubeError can only be derived on enums
  --> $WORKSPACE/tests/compile_fail/error_on_struct.rs
   |
   | pub struct NotAnEnum {

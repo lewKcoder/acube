@@ -45,7 +45,7 @@ pub struct RateLimitRejection {
 /// # Example: Custom Redis Backend
 ///
 /// ```rust,ignore
-/// use a3::rate_limit::{RateLimitBackend, RateLimitOutcome, RateLimitRejection};
+/// use acube::rate_limit::{RateLimitBackend, RateLimitOutcome, RateLimitRejection};
 /// use std::pin::Pin;
 /// use std::future::Future;
 /// use std::time::Duration;

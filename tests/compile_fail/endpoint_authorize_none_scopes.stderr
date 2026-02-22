@@ -1,5 +1,5 @@
-error: Cannot use #[a3_authorize(scopes = [...])] with #[a3_security(none)]. Use #[a3_security(jwt)] for scope-protected endpoints.
+error: Cannot use #[acube_authorize(scopes = [...])] with #[acube_security(none)]. Use #[acube_security(jwt)] for scope-protected endpoints.
  --> $WORKSPACE/tests/compile_fail/endpoint_authorize_none_scopes.rs
   |
-  | async fn test_handler(_ctx: A3Context) -> A3Result<Json<serde_json::Value>, Never> {
+  | async fn test_handler(_ctx: AcubeContext) -> AcubeResult<Json<serde_json::Value>, Never> {
   |          ^^^^^^^^^^^^

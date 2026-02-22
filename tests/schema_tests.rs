@@ -1,91 +1,91 @@
-//! Tests for `#[derive(A3Schema)]` — Phase 1a.
+//! Tests for `#[derive(AcubeSchema)]` — Phase 1a.
 
-use a3::prelude::*;
-use a3::schema::{check_unknown_fields, A3SchemaInfo, A3Validate};
+use acube::prelude::*;
+use acube::schema::{check_unknown_fields, AcubeSchemaInfo, AcubeValidate};
 
 // ─── Test structs ───────────────────────────────────────────────────────────
 
-#[derive(A3Schema, Debug, Deserialize)]
+#[derive(AcubeSchema, Debug, Deserialize)]
 struct UsernameInput {
-    #[a3(min_length = 3, max_length = 30, pattern = "^[a-zA-Z0-9_]+$")]
-    #[a3(sanitize(trim))]
+    #[acube(min_length = 3, max_length = 30, pattern = "^[a-zA-Z0-9_]+$")]
+    #[acube(sanitize(trim))]
     pub username: String,
 }
 
-#[derive(A3Schema, Debug, Deserialize)]
+#[derive(AcubeSchema, Debug, Deserialize)]
 struct EmailInput {
-    #[a3(format = "email", pii)]
-    #[a3(sanitize(trim, lowercase))]
+    #[acube(format = "email", pii)]
+    #[acube(sanitize(trim, lowercase))]
     pub email: String,
 }
 
-#[derive(A3Schema, Debug, Deserialize)]
+#[derive(AcubeSchema, Debug, Deserialize)]
 struct DisplayNameInput {
-    #[a3(min_length = 1, max_length = 100)]
-    #[a3(sanitize(trim, strip_html))]
+    #[acube(min_length = 1, max_length = 100)]
+    #[acube(sanitize(trim, strip_html))]
     pub display_name: String,
 }
 
-#[derive(A3Schema, Debug, Deserialize)]
+#[derive(AcubeSchema, Debug, Deserialize)]
 struct AgeInput {
-    #[a3(min = 0, max = 150)]
+    #[acube(min = 0, max = 150)]
     pub age: i32,
 }
 
-#[derive(A3Schema, Debug, Deserialize)]
+#[derive(AcubeSchema, Debug, Deserialize)]
 struct ScoreInput {
-    #[a3(min = 0.0, max = 100.0)]
+    #[acube(min = 0.0, max = 100.0)]
     pub score: f64,
 }
 
-#[derive(A3Schema, Debug, Deserialize)]
+#[derive(AcubeSchema, Debug, Deserialize)]
 struct OptionalInput {
-    #[a3(min_length = 1, max_length = 50)]
+    #[acube(min_length = 1, max_length = 50)]
     pub nickname: Option<String>,
 }
 
-#[derive(A3Schema, Debug, Deserialize)]
+#[derive(AcubeSchema, Debug, Deserialize)]
 struct TagsInput {
-    #[a3(min_length = 1, max_length = 20)]
-    #[a3(sanitize(trim))]
+    #[acube(min_length = 1, max_length = 20)]
+    #[acube(sanitize(trim))]
     pub tags: Vec<String>,
 }
 
-#[derive(A3Schema, Debug, Deserialize)]
+#[derive(AcubeSchema, Debug, Deserialize)]
 struct UrlInput {
-    #[a3(format = "url")]
+    #[acube(format = "url")]
     pub link: String,
 }
 
-#[derive(A3Schema, Debug, Deserialize)]
+#[derive(AcubeSchema, Debug, Deserialize)]
 struct UuidInput {
-    #[a3(format = "uuid")]
+    #[acube(format = "uuid")]
     pub id: String,
 }
 
-#[derive(A3Schema, Debug, Deserialize)]
+#[derive(AcubeSchema, Debug, Deserialize)]
 struct MultiFieldInput {
-    #[a3(min_length = 3, max_length = 30)]
-    #[a3(sanitize(trim))]
+    #[acube(min_length = 3, max_length = 30)]
+    #[acube(sanitize(trim))]
     pub username: String,
 
-    #[a3(format = "email")]
-    #[a3(sanitize(trim, lowercase))]
+    #[acube(format = "email")]
+    #[acube(sanitize(trim, lowercase))]
     pub email: String,
 
-    #[a3(min = 18, max = 120)]
+    #[acube(min = 18, max = 120)]
     pub age: i32,
 }
 
-#[derive(A3Schema, Debug, Deserialize)]
+#[derive(AcubeSchema, Debug, Deserialize)]
 struct NoAttrsInput {
     pub name: String,
     pub active: bool,
 }
 
-#[derive(A3Schema, Debug, Deserialize)]
+#[derive(AcubeSchema, Debug, Deserialize)]
 struct I64Input {
-    #[a3(min = 0, max = 1000000)]
+    #[acube(min = 0, max = 1000000)]
     pub big_number: i64,
 }
 
@@ -443,7 +443,7 @@ fn url_with_port_valid() {
 #[test]
 fn url_subdomain_valid() {
     let mut input = UrlInput {
-        link: "https://docs.rs/a3/latest".to_string(),
+        link: "https://docs.rs/acube/latest".to_string(),
     };
     assert!(input.validate().is_ok());
 }
@@ -493,31 +493,31 @@ fn url_random_string_invalid() {
     assert_eq!(err[0].code, "format");
 }
 
-// ─── Nested A3Schema validation tests ────────────────────────────────────────
+// ─── Nested AcubeSchema validation tests ────────────────────────────────────────
 
-#[derive(A3Schema, Debug, Deserialize)]
+#[derive(AcubeSchema, Debug, Deserialize)]
 struct InnerInput {
-    #[a3(min_length = 1, max_length = 50)]
-    #[a3(sanitize(trim))]
+    #[acube(min_length = 1, max_length = 50)]
+    #[acube(sanitize(trim))]
     pub name: String,
 
-    #[a3(min = 0, max = 100)]
+    #[acube(min = 0, max = 100)]
     pub value: i32,
 }
 
-#[derive(A3Schema, Debug, Deserialize)]
+#[derive(AcubeSchema, Debug, Deserialize)]
 struct OuterInput {
-    #[a3(min_length = 1)]
+    #[acube(min_length = 1)]
     pub title: String,
     pub inner: InnerInput,
 }
 
-#[derive(A3Schema, Debug, Deserialize)]
+#[derive(AcubeSchema, Debug, Deserialize)]
 struct OuterOptionInput {
     pub inner: Option<InnerInput>,
 }
 
-#[derive(A3Schema, Debug, Deserialize)]
+#[derive(AcubeSchema, Debug, Deserialize)]
 struct OuterVecInput {
     pub items: Vec<InnerInput>,
 }
@@ -669,15 +669,15 @@ fn nested_vec_multiple_elements_invalid() {
 
 // ─── one_of validation tests ─────────────────────────────────────────────────
 
-#[derive(A3Schema, Debug, Deserialize)]
+#[derive(AcubeSchema, Debug, Deserialize)]
 struct StatusInput {
-    #[a3(one_of = ["draft", "published", "archived"])]
+    #[acube(one_of = ["draft", "published", "archived"])]
     pub status: String,
 }
 
-#[derive(A3Schema, Debug, Deserialize)]
+#[derive(AcubeSchema, Debug, Deserialize)]
 struct OptionalStatusInput {
-    #[a3(one_of = ["active", "inactive"])]
+    #[acube(one_of = ["active", "inactive"])]
     pub status: Option<String>,
 }
 

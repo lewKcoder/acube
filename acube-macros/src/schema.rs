@@ -1,10 +1,10 @@
-//! Implementation of `#[derive(A3Schema)]`.
+//! Implementation of `#[derive(AcubeSchema)]`.
 
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Data, DeriveInput, Fields, Ident, Lit, Type};
 
-/// Parsed attributes from `#[a3(...)]` on a single field.
+/// Parsed attributes from `#[acube(...)]` on a single field.
 #[derive(Default, Debug)]
 struct FieldAttrs {
     min_length: Option<usize>,
@@ -53,12 +53,12 @@ pub fn expand(input: &DeriveInput) -> TokenStream {
         Data::Struct(data) => match &data.fields {
             Fields::Named(named) => &named.named,
             _ => {
-                return syn::Error::new_spanned(struct_name, "A3Schema only supports named fields")
+                return syn::Error::new_spanned(struct_name, "AcubeSchema only supports named fields")
                     .to_compile_error();
             }
         },
         _ => {
-            return syn::Error::new_spanned(struct_name, "A3Schema can only be derived on structs")
+            return syn::Error::new_spanned(struct_name, "AcubeSchema can only be derived on structs")
                 .to_compile_error();
         }
     };
@@ -119,12 +119,12 @@ pub fn expand(input: &DeriveInput) -> TokenStream {
         };
 
         field_infos.push(quote! {
-            a3::schema::FieldInfo {
+            acube::schema::FieldInfo {
                 name: #field_name_str.to_string(),
                 type_name: #type_name_str.to_string(),
                 required: !#is_option,
                 pii: #pii,
-                constraints: a3::schema::FieldConstraints {
+                constraints: acube::schema::FieldConstraints {
                     min_length: #min_length_expr,
                     max_length: #max_length_expr,
                     pattern: #pattern_expr,
@@ -150,13 +150,13 @@ pub fn expand(input: &DeriveInput) -> TokenStream {
     let known_fields_array = &known_field_names;
 
     quote! {
-        impl a3::schema::A3Validate for #struct_name {
+        impl acube::schema::AcubeValidate for #struct_name {
             fn known_fields() -> &'static [&'static str] {
                 &[#(#known_fields_array),*]
             }
 
-            fn validate(&mut self) -> ::std::result::Result<(), ::std::vec::Vec<a3::schema::ValidationError>> {
-                let mut errors: ::std::vec::Vec<a3::schema::ValidationError> = ::std::vec::Vec::new();
+            fn validate(&mut self) -> ::std::result::Result<(), ::std::vec::Vec<acube::schema::ValidationError>> {
+                let mut errors: ::std::vec::Vec<acube::schema::ValidationError> = ::std::vec::Vec::new();
                 #(#validate_stmts)*
                 if errors.is_empty() {
                     Ok(())
@@ -166,9 +166,9 @@ pub fn expand(input: &DeriveInput) -> TokenStream {
             }
         }
 
-        impl a3::schema::A3SchemaInfo for #struct_name {
-            fn schema_info() -> a3::schema::SchemaInfo {
-                a3::schema::SchemaInfo {
+        impl acube::schema::AcubeSchemaInfo for #struct_name {
+            fn schema_info() -> acube::schema::SchemaInfo {
+                acube::schema::SchemaInfo {
                     name: stringify!(#struct_name).to_string(),
                     fields: vec![#(#field_infos),*],
                 }
@@ -233,20 +233,20 @@ fn gen_string_validation(
 
     // Sanitization (runs before validation)
     if attrs.sanitize_trim {
-        checks.push(quote! { a3::schema::sanitize_trim(val); });
+        checks.push(quote! { acube::schema::sanitize_trim(val); });
     }
     if attrs.sanitize_lowercase {
-        checks.push(quote! { a3::schema::sanitize_lowercase(val); });
+        checks.push(quote! { acube::schema::sanitize_lowercase(val); });
     }
     if attrs.sanitize_strip_html {
-        checks.push(quote! { a3::schema::sanitize_strip_html(val); });
+        checks.push(quote! { acube::schema::sanitize_strip_html(val); });
     }
 
     // Validation
     if let Some(min) = attrs.min_length {
         checks.push(quote! {
             if val.len() < #min {
-                errors.push(a3::schema::ValidationError {
+                errors.push(acube::schema::ValidationError {
                     field: #field_name_str.to_string(),
                     message: format!("Must be at least {} characters", #min),
                     code: "min_length".to_string(),
@@ -257,7 +257,7 @@ fn gen_string_validation(
     if let Some(max) = attrs.max_length {
         checks.push(quote! {
             if val.len() > #max {
-                errors.push(a3::schema::ValidationError {
+                errors.push(acube::schema::ValidationError {
                     field: #field_name_str.to_string(),
                     message: format!("Must be at most {} characters", #max),
                     code: "max_length".to_string(),
@@ -267,8 +267,8 @@ fn gen_string_validation(
     }
     if let Some(ref pat) = attrs.pattern {
         checks.push(quote! {
-            if !a3::schema::validate_pattern(val, #pat) {
-                errors.push(a3::schema::ValidationError {
+            if !acube::schema::validate_pattern(val, #pat) {
+                errors.push(acube::schema::ValidationError {
                     field: #field_name_str.to_string(),
                     message: format!("Does not match pattern '{}'", #pat),
                     code: "pattern".to_string(),
@@ -278,9 +278,9 @@ fn gen_string_validation(
     }
     if let Some(ref fmt) = attrs.format {
         let validator = match fmt.as_str() {
-            "email" => quote! { a3::schema::validate_email(val) },
-            "url" => quote! { a3::schema::validate_url(val) },
-            "uuid" => quote! { a3::schema::validate_uuid(val) },
+            "email" => quote! { acube::schema::validate_email(val) },
+            "url" => quote! { acube::schema::validate_url(val) },
+            "uuid" => quote! { acube::schema::validate_uuid(val) },
             other => {
                 let msg = format!("Unsupported format: {}", other);
                 return syn::Error::new_spanned(field_name, msg).to_compile_error();
@@ -289,7 +289,7 @@ fn gen_string_validation(
         let fmt_str = fmt.clone();
         checks.push(quote! {
             if !#validator {
-                errors.push(a3::schema::ValidationError {
+                errors.push(acube::schema::ValidationError {
                     field: #field_name_str.to_string(),
                     message: format!("Invalid {} format", #fmt_str),
                     code: "format".to_string(),
@@ -302,11 +302,11 @@ fn gen_string_validation(
         let allowed: Vec<&str> = values.iter().map(|s| s.as_str()).collect();
         checks.push(quote! {
             {
-                let __a3_allowed: &[&str] = &[#(#allowed),*];
-                if !__a3_allowed.contains(&val.as_str()) {
-                    errors.push(a3::schema::ValidationError {
+                let __acube_allowed: &[&str] = &[#(#allowed),*];
+                if !__acube_allowed.contains(&val.as_str()) {
+                    errors.push(acube::schema::ValidationError {
                         field: #field_name_str.to_string(),
-                        message: format!("Must be one of: {}", __a3_allowed.join(", ")),
+                        message: format!("Must be one of: {}", __acube_allowed.join(", ")),
                         code: "one_of".to_string(),
                     });
                 }
@@ -342,7 +342,7 @@ fn gen_int_validation(
     if let Some(min) = attrs.min_i64 {
         checks.push(quote! {
             if (*val as i64) < #min {
-                errors.push(a3::schema::ValidationError {
+                errors.push(acube::schema::ValidationError {
                     field: #field_name_str.to_string(),
                     message: format!("Must be at least {}", #min),
                     code: "min".to_string(),
@@ -353,7 +353,7 @@ fn gen_int_validation(
     if let Some(max) = attrs.max_i64 {
         checks.push(quote! {
             if (*val as i64) > #max {
-                errors.push(a3::schema::ValidationError {
+                errors.push(acube::schema::ValidationError {
                     field: #field_name_str.to_string(),
                     message: format!("Must be at most {}", #max),
                     code: "max".to_string(),
@@ -393,7 +393,7 @@ fn gen_float_validation(
     if let Some(min) = attrs.min_f64 {
         checks.push(quote! {
             if *val < #min {
-                errors.push(a3::schema::ValidationError {
+                errors.push(acube::schema::ValidationError {
                     field: #field_name_str.to_string(),
                     message: format!("Must be at least {}", #min),
                     code: "min".to_string(),
@@ -404,7 +404,7 @@ fn gen_float_validation(
     if let Some(max) = attrs.max_f64 {
         checks.push(quote! {
             if *val > #max {
-                errors.push(a3::schema::ValidationError {
+                errors.push(acube::schema::ValidationError {
                     field: #field_name_str.to_string(),
                     message: format!("Must be at most {}", #max),
                     code: "max".to_string(),
@@ -441,19 +441,19 @@ fn gen_vec_string_validation(
     let mut inner_checks = Vec::new();
 
     if attrs.sanitize_trim {
-        inner_checks.push(quote! { a3::schema::sanitize_trim(item); });
+        inner_checks.push(quote! { acube::schema::sanitize_trim(item); });
     }
     if attrs.sanitize_lowercase {
-        inner_checks.push(quote! { a3::schema::sanitize_lowercase(item); });
+        inner_checks.push(quote! { acube::schema::sanitize_lowercase(item); });
     }
     if attrs.sanitize_strip_html {
-        inner_checks.push(quote! { a3::schema::sanitize_strip_html(item); });
+        inner_checks.push(quote! { acube::schema::sanitize_strip_html(item); });
     }
 
     if let Some(min) = attrs.min_length {
         inner_checks.push(quote! {
             if item.len() < #min {
-                errors.push(a3::schema::ValidationError {
+                errors.push(acube::schema::ValidationError {
                     field: format!("{}[{}]", #field_name_str, __idx),
                     message: format!("Must be at least {} characters", #min),
                     code: "min_length".to_string(),
@@ -464,7 +464,7 @@ fn gen_vec_string_validation(
     if let Some(max) = attrs.max_length {
         inner_checks.push(quote! {
             if item.len() > #max {
-                errors.push(a3::schema::ValidationError {
+                errors.push(acube::schema::ValidationError {
                     field: format!("{}[{}]", #field_name_str, __idx),
                     message: format!("Must be at most {} characters", #max),
                     code: "max_length".to_string(),
@@ -642,12 +642,12 @@ fn gen_openapi_property(field_name_str: &str, kind: &FieldKind, attrs: &FieldAtt
     }
 }
 
-/// Parse all `#[a3(...)]` attributes on a field into `FieldAttrs`.
+/// Parse all `#[acube(...)]` attributes on a field into `FieldAttrs`.
 fn parse_field_attrs(field: &syn::Field) -> FieldAttrs {
     let mut attrs = FieldAttrs::default();
 
     for attr in &field.attrs {
-        if !attr.path().is_ident("a3") {
+        if !attr.path().is_ident("acube") {
             continue;
         }
 

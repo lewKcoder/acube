@@ -1,26 +1,26 @@
-//! Fuzz tests for A3Schema validation using proptest.
+//! Fuzz tests for AcubeSchema validation using proptest.
 
-use a3::prelude::*;
-use a3::schema::A3Validate;
+use acube::prelude::*;
+use acube::schema::AcubeValidate;
 use proptest::prelude::*;
 
-#[derive(A3Schema, Debug, Deserialize)]
+#[derive(AcubeSchema, Debug, Deserialize)]
 struct FuzzInput {
-    #[a3(min_length = 3, max_length = 30, pattern = "^[a-zA-Z0-9_]+$")]
-    #[a3(sanitize(trim))]
+    #[acube(min_length = 3, max_length = 30, pattern = "^[a-zA-Z0-9_]+$")]
+    #[acube(sanitize(trim))]
     pub username: String,
 
-    #[a3(format = "email")]
-    #[a3(sanitize(trim, lowercase))]
+    #[acube(format = "email")]
+    #[acube(sanitize(trim, lowercase))]
     pub email: String,
 
-    #[a3(min = 0, max = 150)]
+    #[acube(min = 0, max = 150)]
     pub age: i32,
 
-    #[a3(min = 0.0, max = 100.0)]
+    #[acube(min = 0.0, max = 100.0)]
     pub score: f64,
 
-    #[a3(min_length = 1, max_length = 50)]
+    #[acube(min_length = 1, max_length = 50)]
     pub nickname: Option<String>,
 }
 

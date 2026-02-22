@@ -1,7 +1,7 @@
 //! Phase 5 tests — CORS, real JWT validation, deserialization error sanitization.
 
-use a3::prelude::*;
-use a3::security::{JwtAuth, JwtClaims, ScopeClaim};
+use acube::prelude::*;
+use acube::security::{JwtAuth, JwtClaims, ScopeClaim};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use jsonwebtoken::{EncodingKey, Header};
@@ -47,53 +47,53 @@ fn make_expired_jwt(sub: &str) -> String {
 
 // ─── Schema + Error + Endpoints ─────────────────────────────────────────────
 
-#[derive(A3Schema, Debug, Deserialize)]
+#[derive(AcubeSchema, Debug, Deserialize)]
 struct JwtTestInput {
-    #[a3(min_length = 1, max_length = 100)]
-    #[a3(sanitize(trim))]
+    #[acube(min_length = 1, max_length = 100)]
+    #[acube(sanitize(trim))]
     pub name: String,
 }
 
-#[derive(A3Error, Debug)]
+#[derive(AcubeError, Debug)]
 enum JwtTestError {
-    #[a3(status = 404, message = "Not found")]
+    #[acube(status = 404, message = "Not found")]
     NotFound,
 }
 
-#[a3_endpoint(GET "/health")]
-#[a3_security(none)]
-#[a3_authorize(public)]
-#[a3_rate_limit(none)]
-async fn health(_ctx: A3Context) -> A3Result<Json<HealthStatus>, Never> {
+#[acube_endpoint(GET "/health")]
+#[acube_security(none)]
+#[acube_authorize(public)]
+#[acube_rate_limit(none)]
+async fn health(_ctx: AcubeContext) -> AcubeResult<Json<HealthStatus>, Never> {
     Ok(Json(HealthStatus::ok("test")))
 }
 
-#[a3_endpoint(POST "/items")]
-#[a3_security(jwt)]
-#[a3_authorize(scopes = ["items:write"])]
-#[a3_rate_limit(none)]
+#[acube_endpoint(POST "/items")]
+#[acube_security(jwt)]
+#[acube_authorize(scopes = ["items:write"])]
+#[acube_rate_limit(none)]
 async fn create_item(
-    _ctx: A3Context,
+    _ctx: AcubeContext,
     input: Valid<JwtTestInput>,
-) -> A3Result<Created<serde_json::Value>, JwtTestError> {
+) -> AcubeResult<Created<serde_json::Value>, JwtTestError> {
     let input = input.into_inner();
     Ok(Created(serde_json::json!({"name": input.name})))
 }
 
-#[a3_endpoint(GET "/items/:id")]
-#[a3_security(jwt)]
-#[a3_authorize(scopes = ["items:read"])]
-#[a3_rate_limit(none)]
+#[acube_endpoint(GET "/items/:id")]
+#[acube_security(jwt)]
+#[acube_authorize(scopes = ["items:read"])]
+#[acube_rate_limit(none)]
 async fn get_item(
-    _ctx: A3Context,
+    _ctx: AcubeContext,
     axum::extract::Path(id): axum::extract::Path<String>,
-) -> A3Result<Json<serde_json::Value>, JwtTestError> {
+) -> AcubeResult<Json<serde_json::Value>, JwtTestError> {
     Ok(Json(serde_json::json!({"id": id})))
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-fn build_jwt_service() -> a3::runtime::Service {
+fn build_jwt_service() -> acube::runtime::Service {
     Service::builder()
         .name("jwt-test")
         .version("0.1.0")
@@ -105,7 +105,7 @@ fn build_jwt_service() -> a3::runtime::Service {
         .expect("failed to build service")
 }
 
-fn build_cors_service(origins: &[&str]) -> a3::runtime::Service {
+fn build_cors_service(origins: &[&str]) -> acube::runtime::Service {
     Service::builder()
         .name("cors-test")
         .version("0.1.0")
@@ -115,7 +115,7 @@ fn build_cors_service(origins: &[&str]) -> a3::runtime::Service {
         .expect("failed to build service")
 }
 
-fn build_default_cors_service() -> a3::runtime::Service {
+fn build_default_cors_service() -> acube::runtime::Service {
     Service::builder()
         .name("cors-default-test")
         .version("0.1.0")
@@ -467,7 +467,7 @@ fn make_rs256_jwt(sub: &str, scopes: Vec<String>) -> String {
     .unwrap()
 }
 
-fn build_rs256_service() -> a3::runtime::Service {
+fn build_rs256_service() -> acube::runtime::Service {
     Service::builder()
         .name("rs256-test")
         .version("0.1.0")
@@ -547,7 +547,7 @@ fn make_es256_jwt(sub: &str, scopes: Vec<String>) -> String {
     .unwrap()
 }
 
-fn build_es256_service() -> a3::runtime::Service {
+fn build_es256_service() -> acube::runtime::Service {
     Service::builder()
         .name("es256-test")
         .version("0.1.0")

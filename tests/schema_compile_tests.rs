@@ -1,4 +1,4 @@
-//! Compile-time tests for `#[derive(A3Schema)]` and `#[derive(A3Error)]` error messages.
+//! Compile-time tests for `#[derive(AcubeSchema)]` and `#[derive(AcubeError)]` error messages.
 
 #[test]
 fn schema_compile_fail_tests() {

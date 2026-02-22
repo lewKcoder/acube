@@ -1,4 +1,4 @@
-error: A3Schema can only be derived on structs
+error: AcubeSchema can only be derived on structs
  --> $WORKSPACE/tests/compile_fail/schema_on_enum.rs
   |
   | pub enum NotAStruct {

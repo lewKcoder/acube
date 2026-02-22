@@ -1,10 +1,10 @@
-//! Implementation of `#[derive(A3Error)]`.
+//! Implementation of `#[derive(AcubeError)]`.
 
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Data, DeriveInput, Fields, Lit};
 
-/// Parsed attributes from `#[a3(...)]` on a single enum variant.
+/// Parsed attributes from `#[acube(...)]` on a single enum variant.
 #[derive(Default, Debug)]
 struct VariantAttrs {
     status: Option<u16>,
@@ -18,7 +18,7 @@ pub fn expand(input: &DeriveInput) -> TokenStream {
     let variants = match &input.data {
         Data::Enum(data) => &data.variants,
         _ => {
-            return syn::Error::new_spanned(enum_name, "A3Error can only be derived on enums")
+            return syn::Error::new_spanned(enum_name, "AcubeError can only be derived on enums")
                 .to_compile_error();
         }
     };
@@ -40,7 +40,7 @@ pub fn expand(input: &DeriveInput) -> TokenStream {
                 return syn::Error::new_spanned(
                     variant_name,
                     format!(
-                        "A3Error variant `{}` requires #[a3(status = NNN)]",
+                        "AcubeError variant `{}` requires #[acube(status = NNN)]",
                         variant_name
                     ),
                 )
@@ -55,7 +55,7 @@ pub fn expand(input: &DeriveInput) -> TokenStream {
                 return syn::Error::new_spanned(
                     variant_name,
                     format!(
-                        "A3Error variant `{}` requires #[a3(message = \"...\")]",
+                        "AcubeError variant `{}` requires #[acube(message = \"...\")]",
                         variant_name
                     ),
                 )
@@ -75,7 +75,7 @@ pub fn expand(input: &DeriveInput) -> TokenStream {
         };
 
         status_arms.push(quote! {
-            #pattern => ::a3::axum::http::StatusCode::from_u16(#status).unwrap_or(::a3::axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+            #pattern => ::acube::axum::http::StatusCode::from_u16(#status).unwrap_or(::acube::axum::http::StatusCode::INTERNAL_SERVER_ERROR)
         });
         message_arms.push(quote! {
             #pattern => #message
@@ -88,7 +88,7 @@ pub fn expand(input: &DeriveInput) -> TokenStream {
         });
 
         openapi_variants.push(quote! {
-            a3::error::OpenApiErrorVariant {
+            acube::error::OpenApiErrorVariant {
                 status: #status,
                 code: #code_str.to_string(),
                 message: #message.to_string(),
@@ -98,8 +98,8 @@ pub fn expand(input: &DeriveInput) -> TokenStream {
     }
 
     quote! {
-        impl a3::error::A3ErrorInfo for #enum_name {
-            fn status_code(&self) -> ::a3::axum::http::StatusCode {
+        impl acube::error::AcubeErrorInfo for #enum_name {
+            fn status_code(&self) -> ::acube::axum::http::StatusCode {
                 match self {
                     #(#status_arms),*
                 }
@@ -123,26 +123,26 @@ pub fn expand(input: &DeriveInput) -> TokenStream {
                 }
             }
 
-            fn openapi_responses() -> Vec<a3::error::OpenApiErrorVariant> {
+            fn openapi_responses() -> Vec<acube::error::OpenApiErrorVariant> {
                 vec![#(#openapi_variants),*]
             }
         }
 
-        impl ::a3::axum::response::IntoResponse for #enum_name {
-            fn into_response(self) -> ::a3::axum::response::Response {
-                let request_id = ::a3::uuid::Uuid::new_v4().to_string();
-                a3::error::into_a3_response(&self, &request_id)
+        impl ::acube::axum::response::IntoResponse for #enum_name {
+            fn into_response(self) -> ::acube::axum::response::Response {
+                let request_id = ::acube::uuid::Uuid::new_v4().to_string();
+                acube::error::into_acube_response(&self, &request_id)
             }
         }
     }
 }
 
-/// Parse all `#[a3(...)]` attributes on an enum variant.
+/// Parse all `#[acube(...)]` attributes on an enum variant.
 fn parse_variant_attrs(variant: &syn::Variant) -> VariantAttrs {
     let mut attrs = VariantAttrs::default();
 
     for attr in &variant.attrs {
-        if !attr.path().is_ident("a3") {
+        if !attr.path().is_ident("acube") {
             continue;
         }
 

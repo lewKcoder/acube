@@ -1,6 +1,6 @@
-use a3::prelude::*;
+use acube::prelude::*;
 
-#[derive(A3Schema, Debug)]
+#[derive(AcubeSchema, Debug)]
 pub struct TupleStruct(String, i32);
 
 fn main() {}

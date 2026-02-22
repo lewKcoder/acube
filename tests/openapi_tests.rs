@@ -1,40 +1,40 @@
-//! OpenAPI 3.0 generation tests for the a³ framework.
+//! OpenAPI 3.0 generation tests for the acube framework.
 
-use a3::prelude::*;
+use acube::prelude::*;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
 
 // ─── Test types ─────────────────────────────────────────────────────────────
 
-#[derive(A3Schema, Debug, serde::Deserialize)]
+#[derive(AcubeSchema, Debug, serde::Deserialize)]
 struct OpenApiTestInput {
-    #[a3(min_length = 3, max_length = 30, pattern = "^[a-zA-Z0-9_]+$")]
-    #[a3(sanitize(trim))]
+    #[acube(min_length = 3, max_length = 30, pattern = "^[a-zA-Z0-9_]+$")]
+    #[acube(sanitize(trim))]
     pub username: String,
 
-    #[a3(format = "email", pii)]
-    #[a3(sanitize(trim, lowercase))]
+    #[acube(format = "email", pii)]
+    #[acube(sanitize(trim, lowercase))]
     pub email: String,
 
-    #[a3(min = 0, max = 120)]
+    #[acube(min = 0, max = 120)]
     pub age: i32,
 
     pub nickname: Option<String>,
 
-    #[a3(min_length = 1, max_length = 20)]
+    #[acube(min_length = 1, max_length = 20)]
     pub tags: Vec<String>,
 }
 
-#[derive(A3Error, Debug)]
+#[derive(AcubeError, Debug)]
 enum OpenApiTestError {
-    #[a3(status = 404, message = "Not found")]
+    #[acube(status = 404, message = "Not found")]
     NotFound,
 
-    #[a3(status = 409, message = "Already exists")]
+    #[acube(status = 409, message = "Already exists")]
     AlreadyExists,
 
-    #[a3(status = 502, retryable, message = "Backend unavailable")]
+    #[acube(status = 502, retryable, message = "Backend unavailable")]
     BackendError,
 }
 
@@ -46,14 +46,14 @@ impl AuthProvider for TestAuth {
     fn authenticate(
         &self,
         req: &axum::http::Request<axum::body::Body>,
-    ) -> Result<AuthIdentity, a3::security::AuthError> {
+    ) -> Result<AuthIdentity, acube::security::AuthError> {
         let header = req
             .headers()
             .get(axum::http::header::AUTHORIZATION)
             .and_then(|v| v.to_str().ok())
-            .ok_or(a3::security::AuthError::MissingToken)?;
+            .ok_or(acube::security::AuthError::MissingToken)?;
         if !header.starts_with("Bearer ") {
-            return Err(a3::security::AuthError::InvalidToken);
+            return Err(acube::security::AuthError::InvalidToken);
         }
         Ok(AuthIdentity {
             subject: "test-user".to_string(),
@@ -65,34 +65,34 @@ impl AuthProvider for TestAuth {
 
 // ─── Test endpoints ─────────────────────────────────────────────────────────
 
-#[a3_endpoint(GET "/health")]
-#[a3_security(none)]
-#[a3_authorize(public)]
-#[a3_rate_limit(none)]
-async fn oa_health(_ctx: A3Context) -> A3Result<Json<HealthStatus>, Never> {
+#[acube_endpoint(GET "/health")]
+#[acube_security(none)]
+#[acube_authorize(public)]
+#[acube_rate_limit(none)]
+async fn oa_health(_ctx: AcubeContext) -> AcubeResult<Json<HealthStatus>, Never> {
     Ok(Json(HealthStatus::ok("test")))
 }
 
-#[a3_endpoint(POST "/users")]
-#[a3_security(jwt)]
-#[a3_authorize(scopes = ["users:create"])]
-#[a3_rate_limit(10, per_minute)]
+#[acube_endpoint(POST "/users")]
+#[acube_security(jwt)]
+#[acube_authorize(scopes = ["users:create"])]
+#[acube_rate_limit(10, per_minute)]
 async fn oa_create_user(
-    _ctx: A3Context,
+    _ctx: AcubeContext,
     input: Valid<OpenApiTestInput>,
-) -> A3Result<Created<serde_json::Value>, OpenApiTestError> {
+) -> AcubeResult<Created<serde_json::Value>, OpenApiTestError> {
     let input = input.into_inner();
     Ok(Created(serde_json::json!({ "username": input.username })))
 }
 
-#[a3_endpoint(GET "/users/:id")]
-#[a3_security(jwt)]
-#[a3_authorize(scopes = ["users:read"])]
-#[a3_rate_limit(none)]
+#[acube_endpoint(GET "/users/:id")]
+#[acube_security(jwt)]
+#[acube_authorize(scopes = ["users:read"])]
+#[acube_rate_limit(none)]
 async fn oa_get_user(
-    _ctx: A3Context,
+    _ctx: AcubeContext,
     axum::extract::Path(id): axum::extract::Path<String>,
-) -> A3Result<Json<serde_json::Value>, OpenApiTestError> {
+) -> AcubeResult<Json<serde_json::Value>, OpenApiTestError> {
     Ok(Json(serde_json::json!({ "id": id })))
 }
 
@@ -210,7 +210,7 @@ fn openapi_responses_retryable() {
 
 // ─── Full document tests ────────────────────────────────────────────────────
 
-fn build_openapi_service() -> a3::runtime::Service {
+fn build_openapi_service() -> acube::runtime::Service {
     Service::builder()
         .name("test-api")
         .version("1.0.0")
@@ -438,15 +438,15 @@ async fn openapi_endpoint_has_json_content_type() {
 
 // ─── NoContent endpoint tests ─────────────────────────────────────────────
 
-#[a3_endpoint(DELETE "/users/:id")]
-#[a3_security(jwt)]
-#[a3_authorize(scopes = ["users:delete"])]
-#[a3_rate_limit(none)]
-async fn oa_delete_user(_ctx: A3Context) -> A3Result<NoContent, OpenApiTestError> {
+#[acube_endpoint(DELETE "/users/:id")]
+#[acube_security(jwt)]
+#[acube_authorize(scopes = ["users:delete"])]
+#[acube_rate_limit(none)]
+async fn oa_delete_user(_ctx: AcubeContext) -> AcubeResult<NoContent, OpenApiTestError> {
     Ok(NoContent)
 }
 
-fn build_openapi_service_with_nocontent() -> a3::runtime::Service {
+fn build_openapi_service_with_nocontent() -> acube::runtime::Service {
     Service::builder()
         .name("test-api-nc")
         .version("1.0.0")
@@ -471,12 +471,12 @@ fn openapi_json_nocontent_status_204() {
 
 // ─── one_of enum OpenAPI tests ────────────────────────────────────────────
 
-#[derive(A3Schema, Debug, serde::Deserialize)]
+#[derive(AcubeSchema, Debug, serde::Deserialize)]
 struct OneOfTestInput {
-    #[a3(one_of = ["draft", "published", "archived"])]
+    #[acube(one_of = ["draft", "published", "archived"])]
     pub status: String,
 
-    #[a3(min_length = 1)]
+    #[acube(min_length = 1)]
     pub title: String,
 }
 
@@ -502,13 +502,13 @@ fn openapi_schema_one_of_non_enum_field_unchanged() {
 
 // ─── Nested struct OpenAPI tests ─────────────────────────────────────────
 
-#[derive(A3Schema, Debug, serde::Deserialize)]
+#[derive(AcubeSchema, Debug, serde::Deserialize)]
 struct NestedInner {
-    #[a3(min_length = 1)]
+    #[acube(min_length = 1)]
     pub name: String,
 }
 
-#[derive(A3Schema, Debug, serde::Deserialize)]
+#[derive(AcubeSchema, Debug, serde::Deserialize)]
 struct NestedOuter {
     pub title: String,
     pub inner: NestedInner,

@@ -1,11 +1,11 @@
-//! # a³ (エースリー)
+//! # acube (エースリー)
 //!
 //! AI が生成するサーバーコードのセキュリティを、フレームワークの構文レベルで強制する Rust ライブラリ。
 //!
 //! ## 設計原則
 //!
 //! 1. **安全性は構文で強制** — セキュリティはオプトアウト。書かないとコンパイルエラー
-//! 2. **三重検証** — Rust コンパイラ (型) → a³ 契約 (起動時) → パイプライン (実行時)
+//! 2. **三重検証** — Rust コンパイラ (型) → acube 契約 (起動時) → パイプライン (実行時)
 //! 3. **Rust の慣習に従う** — derive macro, trait, Result, Option。独自構文は最小限
 
 pub mod error;
@@ -25,13 +25,13 @@ pub use uuid;
 
 /// Prelude for convenient imports.
 pub mod prelude {
-    pub use crate::error::{A3AuthError, A3ErrorInfo, A3FrameworkError, OpenApiErrorVariant};
-    pub use crate::extract::{A3Context, Valid};
+    pub use crate::error::{AcubeAuthError, AcubeErrorInfo, AcubeFrameworkError, OpenApiErrorVariant};
+    pub use crate::extract::{AcubeContext, Valid};
     pub use crate::rate_limit::{
         InMemoryBackend, RateLimitBackend, RateLimitOutcome, RateLimitRejection,
     };
     pub use crate::runtime::{EndpointOpenApi, EndpointRegistration, Service};
-    pub use crate::schema::{A3SchemaInfo, A3Validate, FieldConstraints, ValidationError};
+    pub use crate::schema::{AcubeSchemaInfo, AcubeValidate, FieldConstraints, ValidationError};
     pub use crate::security::{
         AuthIdentity, AuthProvider, JwtAuth, JwtAuthError, JwtClaims, ScopeClaim,
     };
@@ -42,7 +42,7 @@ pub mod prelude {
     pub use axum::response::IntoResponse;
     pub use serde::{Deserialize, Serialize};
 
-    pub use a3_macros::{a3_authorize, a3_endpoint, A3Error, A3Schema};
+    pub use acube_macros::{acube_authorize, acube_endpoint, AcubeError, AcubeSchema};
 }
 
 /// Initialize structured tracing (logging).
@@ -54,14 +54,14 @@ pub fn init_tracing() {
         .init();
 }
 
-/// Serve an a³ service on the given address.
+/// Serve an acube service on the given address.
 pub async fn serve(
     service: runtime::Service,
     addr: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let router = service.into_router();
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    tracing::info!("a³ service listening on {}", addr);
+    tracing::info!("acube service listening on {}", addr);
     axum::serve(listener, router)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
