@@ -1,12 +1,12 @@
 //! Service builder and runtime for the acube framework.
 //!
-//! Pipeline stages (6段):
-//! ① Route Resolution
-//! ② Security (ヘッダー注入 + レート制限 + ペイロード制限)
-//! ③ Auth (認証 + スコープ検証)
-//! ④ Input (バリデーション + サニタイズ) — handled by `Valid<T>` extractor
-//! ⑤ Handler Execution
-//! ⑥ Response (エラー整形 + レスポンス構築)
+//! Pipeline stages (6):
+//! 1. Route Resolution
+//! 2. Security (header injection + rate limiting + payload limit)
+//! 3. Auth (authentication + scope verification)
+//! 4. Input (validation + sanitization) — handled by `Valid<T>` extractor
+//! 5. Handler Execution
+//! 6. Response (error formatting + response construction)
 
 use axum::body::Body;
 use axum::extract::Request;

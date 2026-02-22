@@ -1,6 +1,6 @@
 This project uses the acube framework. Follow the rules below when generating code.
 
-# acube (エーキューブ) — AI Security Framework for Rust
+# acube — AI Security Framework for Rust
 
 ## What is acube?
 
@@ -269,18 +269,18 @@ pub status: String,
 pub state: Option<String>,  // None skips check, Some validates
 ```
 
-### Option<数値型> のバリデーション
+### Option\<numeric\> Validation
 
-Option<T> に min/max を付けた場合、None はスキップ、Some なら検証されます:
+When Option\<T\> has min/max attributes, None is skipped and Some is validated:
 
 ```rust
 #[derive(AcubeSchema, Debug, Deserialize)]
 pub struct ExifInput {
     #[acube(min = 50, max = 102400)]
-    pub iso: Option<i32>,       // None → OK、Some(100) → OK、Some(999999) → エラー
+    pub iso: Option<i32>,       // None -> OK, Some(100) -> OK, Some(999999) -> error
 
     #[acube(min = 0.0)]
-    pub focal_length: Option<f64>,  // f64 の min/max もサポート
+    pub focal_length: Option<f64>,  // f64 min/max also supported
 }
 ```
 
@@ -436,13 +436,13 @@ async fn list_items(
 }
 ```
 
-### ページネーション（カーソルベース推奨）
+### Pagination (cursor-based recommended)
 
 ```rust
 #[derive(Deserialize)]
 pub struct ListParams {
-    pub cursor: Option<String>,  // 前回最後のID
-    pub limit: Option<i64>,      // デフォルト20、最大100
+    pub cursor: Option<String>,  // last ID from previous page
+    pub limit: Option<i64>,      // default 20, max 100
 }
 
 #[acube_endpoint(GET "/items")]
@@ -455,7 +455,7 @@ async fn list_items(
     let pool = ctx.state::<SqlitePool>();
     let user_id = ctx.user_id();
     let limit = params.limit.unwrap_or(20).min(100);
-    let fetch_limit = limit + 1; // 1つ多く取得して has_more を判定
+    let fetch_limit = limit + 1; // fetch one extra to determine has_more
 
     let items = match &params.cursor {
         Some(cursor) => {
@@ -544,10 +544,10 @@ let token = encode(
 
 `ScopeClaim` wraps `Vec<String>` and deserializes from either a JSON array `["a", "b"]` or comma-separated string `"a,b"`.
 
-## 所有権チェック（リソースの所有者確認）
+## Ownership Check (resource owner verification)
 
-複数のエンドポイントで「自分のリソースのみ操作可能」を実装する場合、
-ヘルパー関数を定義して繰り返しを減らしてください:
+When multiple endpoints need "only the owner can operate on their own resources",
+define a helper function to reduce repetition:
 
 ```rust
 async fn verify_owner(
@@ -562,15 +562,15 @@ async fn verify_owner(
         .fetch_optional(pool)
         .await
         .map_err(|_| ItemError::Internal)?
-        .ok_or(ItemError::NotFound)?;  // 存在しない → 404
+        .ok_or(ItemError::NotFound)?;  // does not exist -> 404
 
     if owner != user_id {
-        return Err(ItemError::NotFound);  // 他人のリソース → 404（403ではなく）
+        return Err(ItemError::NotFound);  // other user's resource -> 404 (not 403)
     }
     Ok(())
 }
 
-// 使用例
+// Usage example
 async fn delete_item(ctx: AcubeContext) -> AcubeResult<NoContent, ItemError> {
     let pool = ctx.state::<SqlitePool>();
     let user_id = ctx.user_id();
@@ -583,8 +583,8 @@ async fn delete_item(ctx: AcubeContext) -> AcubeResult<NoContent, ItemError> {
 }
 ```
 
-注意: 他人のリソースには 403 (Forbidden) ではなく 404 (Not Found) を返してください。
-403 はリソースの存在を攻撃者に漏らします。
+Note: Return 404 (Not Found) instead of 403 (Forbidden) for other users' resources.
+403 leaks the existence of the resource to attackers.
 
 ## Environment Variables
 

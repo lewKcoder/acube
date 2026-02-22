@@ -1,12 +1,12 @@
-//! # acube (エースリー)
+//! # acube
 //!
-//! AI が生成するサーバーコードのセキュリティを、フレームワークの構文レベルで強制する Rust ライブラリ。
+//! Security-first server framework that enforces security at the syntax level for AI-generated Rust code.
 //!
-//! ## 設計原則
+//! ## Design Principles
 //!
-//! 1. **安全性は構文で強制** — セキュリティはオプトアウト。書かないとコンパイルエラー
-//! 2. **三重検証** — Rust コンパイラ (型) → acube 契約 (起動時) → パイプライン (実行時)
-//! 3. **Rust の慣習に従う** — derive macro, trait, Result, Option。独自構文は最小限
+//! 1. **Security enforced by syntax** — Security is opt-out. Omit it and you get a compile error.
+//! 2. **Triple verification** — Rust compiler (types) → acube contract (startup) → pipeline (runtime)
+//! 3. **Follow Rust conventions** — derive macros, traits, Result, Option. Minimal custom syntax.
 
 pub mod error;
 pub mod extract;
