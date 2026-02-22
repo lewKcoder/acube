@@ -1,9 +1,10 @@
+use std::env;
 use std::fs;
 use std::io::{self, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process;
 
-const TEMPLATE: &str = include_str!("../../a3/templates/AI_INSTRUCTIONS.md");
+const FALLBACK_TEMPLATE: &str = include_str!("../../a3/templates/AI_INSTRUCTIONS.md");
 
 const AI_FILES: &[&str] = &[
     "CLAUDE.md",
@@ -13,6 +14,39 @@ const AI_FILES: &[&str] = &[
     "GEMINI.md",
     ".windsurfrules",
 ];
+
+/// Try to find the live AI_INSTRUCTIONS.md template from the a3 workspace.
+/// Walks up from `start` looking for `a3/templates/AI_INSTRUCTIONS.md`.
+/// Returns the file contents if found, otherwise None.
+fn find_live_template(start: &Path) -> Option<String> {
+    let mut dir = start.to_path_buf();
+    loop {
+        let candidate = dir.join("a3/templates/AI_INSTRUCTIONS.md");
+        if candidate.is_file() {
+            return fs::read_to_string(&candidate).ok();
+        }
+        if !dir.pop() {
+            break;
+        }
+    }
+    None
+}
+
+/// Get the best available template: live file if found, otherwise compiled-in fallback.
+fn get_template() -> String {
+    let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    if let Some(live) = find_live_template(&cwd) {
+        return live;
+    }
+
+    // Also try from the cargo-a3 binary's original source location (compile-time)
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    if let Some(live) = find_live_template(&manifest_dir) {
+        return live;
+    }
+
+    FALLBACK_TEMPLATE.to_string()
+}
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -126,7 +160,8 @@ curl http://localhost:3000/health
     );
     write_file(&root.join("README.md"), &readme);
 
-    // AI instruction files
+    // AI instruction files — use live template if available
+    let template = get_template();
     for &file in AI_FILES {
         let path = root.join(file);
         if let Some(parent) = path.parent() {
@@ -137,7 +172,7 @@ curl http://localhost:3000/health
                 });
             }
         }
-        write_file(&path, TEMPLATE);
+        write_file(&path, &template);
     }
 
     println!("a\u{b3} project '{}' created:", name);
@@ -160,6 +195,7 @@ curl http://localhost:3000/health
 }
 
 fn run_init() {
+    let template = get_template();
     let mut created = Vec::new();
     let mut skipped = Vec::new();
 
@@ -184,13 +220,13 @@ fn run_init() {
             io::stdin().read_line(&mut answer).unwrap_or(0);
 
             if answer.trim().eq_ignore_ascii_case("y") {
-                write_file(path, TEMPLATE);
+                write_file(path, &template);
                 created.push(file);
             } else {
                 skipped.push(file);
             }
         } else {
-            write_file(path, TEMPLATE);
+            write_file(path, &template);
             created.push(file);
         }
     }

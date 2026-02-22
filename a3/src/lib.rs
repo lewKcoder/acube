@@ -16,10 +16,12 @@ pub mod schema;
 pub mod security;
 pub mod types;
 
-// Re-export axum so that generated code from a3_endpoint macro can reference it
-// without requiring users to add axum as a direct dependency.
+// Re-export axum and uuid so that generated code from macros can reference them
+// without requiring users to add these as direct dependencies.
 #[doc(hidden)]
 pub use axum;
+#[doc(hidden)]
+pub use uuid;
 
 /// Prelude for convenient imports.
 pub mod prelude {

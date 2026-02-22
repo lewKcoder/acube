@@ -102,6 +102,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 7. **First parameter is always `A3Context`** (or `_ctx: A3Context`).
 
+## Dynamic Authorization (Multi-tenant / Resource-based)
+
+`#[a3_authorize(role = "admin")]` and `#[a3_authorize(scopes = [...])]` verify
+static claims baked into the JWT at token issuance.
+
+For apps where roles vary per team/project (e.g., admin in Team A, viewer in Team B),
+JWT static claims are insufficient.
+
+Use `#[a3_authorize(authenticated)]` and verify permissions in the handler:
+
+```rust
+#[a3_endpoint(DELETE "/teams/:id/memos/:memo_id")]
+#[a3_security(jwt)]
+#[a3_authorize(authenticated)]  // a3 only verifies JWT validity
+async fn delete_memo(ctx: A3Context) -> A3Result<NoContent, MemoError> {
+    let pool = ctx.state::<SqlitePool>();
+    let user_id = ctx.user_id();
+    let team_id: String = ctx.path("id");
+
+    // Look up the user's role in this specific team from DB
+    let role = sqlx::query_scalar::<_, String>(
+        "SELECT role FROM team_members WHERE team_id = ? AND user_id = ?"
+    )
+    .bind(&team_id)
+    .bind(user_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|_| MemoError::Internal)?
+    .ok_or(MemoError::Forbidden)?;
+
+    if role != "admin" && role != "member" {
+        return Err(MemoError::Forbidden);
+    }
+
+    // ... delete logic
+}
+```
+
+When to use which:
+- `role = "admin"` / `scopes = [...]` — same permissions for all resources (global admin, API key scopes)
+- `authenticated` + handler check — permissions vary per resource (teams, projects, organizations)
+
 ## What a3 does automatically
 
 - 7 security headers on every response (HSTS, CSP, X-Frame-Options, etc.)

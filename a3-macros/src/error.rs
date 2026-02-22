@@ -130,7 +130,7 @@ pub fn expand(input: &DeriveInput) -> TokenStream {
 
         impl ::a3::axum::response::IntoResponse for #enum_name {
             fn into_response(self) -> ::a3::axum::response::Response {
-                let request_id = ::uuid::Uuid::new_v4().to_string();
+                let request_id = ::a3::uuid::Uuid::new_v4().to_string();
                 a3::error::into_a3_response(&self, &request_id)
             }
         }
