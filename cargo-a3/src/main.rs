@@ -69,6 +69,12 @@ fn main() {
 fn run_new(name: &str) {
     let root = Path::new(name);
 
+    // Use basename for the package name (e.g., "/tmp/my-app" → "my-app")
+    let pkg_name = root
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(name);
+
     if root.exists() {
         eprintln!("Error: directory '{}' already exists", name);
         process::exit(1);
@@ -82,7 +88,7 @@ fn run_new(name: &str) {
     // Cargo.toml
     let cargo_toml = format!(
         r#"[package]
-name = "{name}"
+name = "{pkg_name}"
 version = "0.1.0"
 edition = "2021"
 
@@ -110,7 +116,7 @@ async fn health(_ctx: A3Context) -> A3Result<Json<HealthStatus>, Never> {{
 async fn main() -> Result<(), Box<dyn std::error::Error>> {{
     a3::init_tracing();
     let service = Service::builder()
-        .name("{name}")
+        .name("{pkg_name}")
         .version("0.1.0")
         .endpoint(health())
         .build()?;
@@ -140,7 +146,7 @@ RUST_LOG=info
     // README.md
     let readme = format!(
         "\
-# {name}
+# {pkg_name}
 
 Built with a\u{b3} — AI Security Framework for Rust.
 
@@ -175,7 +181,7 @@ curl http://localhost:3000/health
         write_file(&path, &template);
     }
 
-    println!("a\u{b3} project '{}' created:", name);
+    println!("a\u{b3} project '{}' created:", pkg_name);
     println!();
     println!("  {}/", name);
     println!("  \u{251c}\u{2500}\u{2500} Cargo.toml");
