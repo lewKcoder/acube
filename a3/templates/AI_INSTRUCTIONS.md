@@ -190,6 +190,7 @@ a3 supports HS256, RS256, and ES256:
 ```
 
 `from_env()` reads `JWT_ALGORITHM` (`HS256`/`RS256`/`ES256`, default: `HS256`):
+
 - HS256: `JWT_SECRET` (default: `"dev-secret"`)
 - RS256/ES256: `JWT_PUBLIC_KEY` (PEM string, required)
 
