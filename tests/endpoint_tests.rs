@@ -91,10 +91,8 @@ async fn create_item(
 #[a3_security(jwt)]
 #[a3_authorize(scopes = ["users:read"])]
 #[a3_rate_limit(none)]
-async fn get_item(
-    _ctx: A3Context,
-    axum::extract::Path(id): axum::extract::Path<String>,
-) -> A3Result<Json<serde_json::Value>, TestError> {
+async fn get_item(ctx: A3Context) -> A3Result<Json<serde_json::Value>, TestError> {
+    let id: String = ctx.path("id");
     if id == "999" {
         return Err(TestError::NotFound);
     }

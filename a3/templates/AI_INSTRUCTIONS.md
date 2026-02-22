@@ -143,7 +143,7 @@ Service::builder()
     .name("service-name")                          // Required
     .version("1.0.0")                              // Required
     .endpoint(handler_fn())                        // Add endpoint
-    .state(pool)                                   // Shared state (Extension<T>)
+    .state(pool)                                   // Shared state → ctx.state::<T>()
     .auth(JwtAuth::from_env()?)                    // JWT auth (required if any JWT endpoint)
     .cors_allow_origins(&["https://example.com"])  // CORS origins (default: deny all)
     .content_security_policy("default-src 'self'") // CSP (default: "default-src 'none'")
@@ -152,7 +152,7 @@ Service::builder()
     .build()?                                      // Validates and builds
 ```
 
-`.state(value)` adds shared application state accessible via `axum::extract::Extension<T>` in handlers.
+`.state(value)` adds shared application state accessible via `ctx.state::<T>()` in handlers.
 Can be called multiple times with different types. The value must be `Clone + Send + Sync + 'static`.
 
 ```rust
@@ -167,14 +167,12 @@ let service = Service::builder()
 
 a3::serve(service, "0.0.0.0:3000").await
 
-// Handler — extract with Extension<T>
+// Handler — use ctx.state::<T>()
 #[a3_endpoint(GET "/items")]
 #[a3_security(jwt)]
 #[a3_authorize(scopes = ["items:read"])]
-async fn handler(
-    ctx: A3Context,
-    axum::extract::Extension(pool): axum::extract::Extension<SqlitePool>,
-) -> A3Result<Json<Vec<Item>>, ItemError> {
+async fn handler(ctx: A3Context) -> A3Result<Json<Vec<Item>>, ItemError> {
+    let pool = ctx.state::<SqlitePool>();
     // use pool...
 }
 ```
@@ -183,6 +181,7 @@ async fn handler(
 
 - `Json<T>` — 200 OK with JSON body
 - `Created<T>` — 201 Created with JSON body
+- `NoContent` — 204 No Content (empty body, use for DELETE endpoints)
 - `A3Result<T, E>` — Result alias (Ok = success, Err = structured error)
 - `HealthStatus::ok("version")` — Standard health check response
 
@@ -207,6 +206,57 @@ a3 supports HS256, RS256, and ES256:
 - HS256: `JWT_SECRET` (default: `"dev-secret"`)
 - RS256/ES256: `JWT_PUBLIC_KEY` (PEM string, required)
 
+## A3Context Helpers
+
+`A3Context` provides convenience methods for common operations:
+
+```rust
+// Get authenticated user ID (panics if not authenticated — use only with #[a3_security(jwt)])
+let user_id = ctx.user_id();
+
+// Get path parameters (panics if not found — route must define the param)
+let id: String = ctx.path("id");
+let page: i32 = ctx.path("page");
+
+// Get shared state (panics if not registered — must call .state(value) on builder)
+let pool = ctx.state::<SqlitePool>();
+```
+
+All panics are intentional for developer configuration errors. a3's panic handler returns a structured 500 response.
+
+### Full Example: DELETE endpoint
+
+```rust
+#[a3_endpoint(DELETE "/items/:id")]
+#[a3_security(jwt)]
+#[a3_authorize(scopes = ["items:delete"])]
+async fn delete_item(ctx: A3Context) -> A3Result<NoContent, ItemError> {
+    let id: String = ctx.path("id");
+    let user_id = ctx.user_id();
+    let pool = ctx.state::<SqlitePool>();
+    // delete item...
+    Ok(NoContent)
+}
+```
+
+### Full Example: PATCH with path + body
+
+```rust
+#[a3_endpoint(PATCH "/items/:id")]
+#[a3_security(jwt)]
+#[a3_authorize(scopes = ["items:update"])]
+async fn update_item(
+    ctx: A3Context,
+    input: Valid<UpdateItemInput>,
+) -> A3Result<Json<ItemOutput>, ItemError> {
+    let id: String = ctx.path("id");
+    let pool = ctx.state::<SqlitePool>();
+    let input = input.into_inner();
+    // update item...
+    Ok(Json(item))
+}
+```
+
 ## AuthIdentity
 
 When an endpoint has `#[a3_security(jwt)]`, the authenticated identity is available via `ctx.auth`:
@@ -216,14 +266,15 @@ When an endpoint has `#[a3_security(jwt)]`, the authenticated identity is availa
 #[a3_security(jwt)]
 #[a3_authorize(scopes = ["profile:read"])]
 async fn get_me(ctx: A3Context) -> A3Result<Json<Profile>, MyError> {
-    let identity = ctx.auth.as_ref().unwrap(); // Always Some for JWT endpoints
-    let user_id = &identity.subject;           // User ID from JWT "sub" claim
+    let user_id = ctx.user_id();       // Shorthand for ctx.auth subject
+    let identity = ctx.auth.as_ref().unwrap(); // Full identity access
     let scopes = &identity.scopes;             // Granted scopes
     let role = &identity.role;                 // Role claim (Option<String>)
     // ...
 }
 ```
 
+- `ctx.user_id()` — shorthand for the JWT `sub` claim (panics if not authenticated)
 - `ctx.auth` is `Option<AuthIdentity>` — `Some` for JWT endpoints, `None` for `#[a3_security(none)]`
 - `AuthIdentity.subject: String` — the JWT `sub` claim (typically user ID)
 - `AuthIdentity.scopes: Vec<String>` — the granted scopes

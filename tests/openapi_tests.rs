@@ -436,6 +436,39 @@ async fn openapi_endpoint_has_json_content_type() {
     assert!(ct.contains("application/json"));
 }
 
+// ─── NoContent endpoint tests ─────────────────────────────────────────────
+
+#[a3_endpoint(DELETE "/users/:id")]
+#[a3_security(jwt)]
+#[a3_authorize(scopes = ["users:delete"])]
+#[a3_rate_limit(none)]
+async fn oa_delete_user(_ctx: A3Context) -> A3Result<NoContent, OpenApiTestError> {
+    Ok(NoContent)
+}
+
+fn build_openapi_service_with_nocontent() -> a3::runtime::Service {
+    Service::builder()
+        .name("test-api-nc")
+        .version("1.0.0")
+        .endpoint(oa_health())
+        .endpoint(oa_create_user())
+        .endpoint(oa_get_user())
+        .endpoint(oa_delete_user())
+        .auth(TestAuth)
+        .openapi(true)
+        .build()
+        .expect("failed to build service")
+}
+
+#[test]
+fn openapi_json_nocontent_status_204() {
+    let service = build_openapi_service_with_nocontent();
+    let json: serde_json::Value = serde_json::from_str(&service.openapi_json()).unwrap();
+    let delete_user = &json["paths"]["/users/{id}"]["delete"];
+    assert!(delete_user["responses"]["204"].is_object());
+    assert_eq!(delete_user["responses"]["204"]["description"], "No content");
+}
+
 // ─── Default disabled tests ────────────────────────────────────────────────
 
 #[tokio::test]

@@ -10,9 +10,11 @@ use axum::http::request::Parts;
 use axum::http::StatusCode;
 use axum::response::Response;
 use serde::de::DeserializeOwned;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::error::error_response;
+use crate::runtime::SharedState;
 use crate::schema::{check_unknown_fields, A3Validate, ValidationError};
 use crate::security::AuthIdentity;
 
@@ -22,13 +24,92 @@ pub struct RequestId(pub String);
 
 /// Request context available to all a³ endpoint handlers.
 ///
-/// Provides the request ID and optional authenticated identity.
-#[derive(Debug, Clone)]
+/// Provides the request ID, optional authenticated identity, path parameters,
+/// and shared application state.
+#[derive(Clone)]
 pub struct A3Context {
     /// Unique request identifier.
     pub request_id: String,
     /// Authenticated identity (if the endpoint requires auth and it succeeded).
     pub auth: Option<AuthIdentity>,
+    /// Path parameters extracted from the URL (private — use `ctx.path::<T>("name")`).
+    path_params: HashMap<String, String>,
+    /// Shared application state (private — use `ctx.state::<T>()`).
+    shared_state: SharedState,
+}
+
+impl std::fmt::Debug for A3Context {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("A3Context")
+            .field("request_id", &self.request_id)
+            .field("auth", &self.auth)
+            .field("path_params", &self.path_params)
+            .finish()
+    }
+}
+
+impl A3Context {
+    /// Get a path parameter by name, parsed to the desired type.
+    ///
+    /// # Panics
+    /// Panics if the parameter is not found or cannot be parsed.
+    /// This is intentional — missing path parameters are a developer configuration error,
+    /// and a³'s panic handler will return a structured 500 response.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let id: String = ctx.path("id");
+    /// let page: i32 = ctx.path("page");
+    /// ```
+    pub fn path<T: std::str::FromStr>(&self, name: &str) -> T
+    where
+        T::Err: std::fmt::Display,
+    {
+        let value = self
+            .path_params
+            .get(name)
+            .unwrap_or_else(|| panic!("path parameter '{}' not found", name));
+        value
+            .parse()
+            .unwrap_or_else(|e| panic!("path parameter '{}' parse error: {}", name, e))
+    }
+
+    /// Get shared state by type, previously registered via `Service::builder().state(value)`.
+    ///
+    /// # Panics
+    /// Panics if the state type was not registered. This is intentional —
+    /// missing state is a developer configuration error.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let pool = ctx.state::<SqlitePool>();
+    /// ```
+    pub fn state<T: Clone + Send + Sync + 'static>(&self) -> T {
+        self.shared_state.get::<T>().unwrap_or_else(|| {
+            panic!(
+                "state type '{}' not registered — call .state(value) on the ServiceBuilder",
+                std::any::type_name::<T>()
+            )
+        })
+    }
+
+    /// Get the authenticated user's ID (JWT `sub` claim).
+    ///
+    /// # Panics
+    /// Panics if the endpoint is not authenticated. This is intentional —
+    /// calling `user_id()` on a `#[a3_security(none)]` endpoint is a developer error.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let user_id = ctx.user_id();
+    /// ```
+    pub fn user_id(&self) -> &str {
+        &self
+            .auth
+            .as_ref()
+            .expect("user_id() called on unauthenticated endpoint — use #[a3_security(jwt)]")
+            .subject
+    }
 }
 
 #[async_trait]
@@ -47,7 +128,26 @@ where
 
         let auth = parts.extensions.get::<AuthIdentity>().cloned();
 
-        Ok(A3Context { request_id, auth })
+        // Extract all path parameters (best-effort; empty if no path params)
+        let path_params =
+            axum::extract::Path::<HashMap<String, String>>::from_request_parts(parts, _state)
+                .await
+                .map(|p| p.0)
+                .unwrap_or_default();
+
+        // Extract shared state (empty if not registered)
+        let shared_state = parts
+            .extensions
+            .get::<SharedState>()
+            .cloned()
+            .unwrap_or_default();
+
+        Ok(A3Context {
+            request_id,
+            auth,
+            path_params,
+            shared_state,
+        })
     }
 }
 

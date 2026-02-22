@@ -92,10 +92,8 @@ async fn create_item(
 #[a3_security(jwt)]
 #[a3_authorize(scopes = ["items:read"])]
 #[a3_rate_limit(none)]
-async fn get_item(
-    _ctx: A3Context,
-    axum::extract::Path(id): axum::extract::Path<String>,
-) -> A3Result<Json<serde_json::Value>, ItemError> {
+async fn get_item(ctx: A3Context) -> A3Result<Json<serde_json::Value>, ItemError> {
+    let id: String = ctx.path("id");
     Ok(Json(serde_json::json!({"id": id})))
 }
 
@@ -693,4 +691,155 @@ async fn forbidden_response_does_not_leak_role_names() {
     // Should not contain role names
     assert!(!body_str.contains("admin"));
     assert_eq!(json["error"]["message"], "Insufficient permissions");
+}
+
+// ─── Tests: ctx.path(), ctx.state(), ctx.user_id(), NoContent, Path+Body ────
+
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+type TestStore = Arc<Mutex<HashMap<String, String>>>;
+
+#[a3_endpoint(GET "/ctx-test/:id")]
+#[a3_security(jwt)]
+#[a3_authorize(authenticated)]
+#[a3_rate_limit(none)]
+async fn ctx_path_test(ctx: A3Context) -> A3Result<Json<serde_json::Value>, Never> {
+    let id: String = ctx.path("id");
+    let user_id = ctx.user_id().to_string();
+    Ok(Json(serde_json::json!({"id": id, "user_id": user_id})))
+}
+
+#[a3_endpoint(GET "/ctx-state-test")]
+#[a3_security(jwt)]
+#[a3_authorize(authenticated)]
+#[a3_rate_limit(none)]
+async fn ctx_state_test(ctx: A3Context) -> A3Result<Json<serde_json::Value>, Never> {
+    let store = ctx.state::<TestStore>();
+    let store = store.lock().unwrap();
+    let count = store.len();
+    Ok(Json(serde_json::json!({"count": count})))
+}
+
+#[a3_endpoint(DELETE "/ctx-delete/:id")]
+#[a3_security(jwt)]
+#[a3_authorize(authenticated)]
+#[a3_rate_limit(none)]
+async fn ctx_no_content(ctx: A3Context) -> A3Result<NoContent, ItemError> {
+    let _id: String = ctx.path("id");
+    Ok(NoContent)
+}
+
+#[derive(A3Schema, Debug, Deserialize)]
+struct UpdateInput {
+    #[a3(min_length = 1, max_length = 100)]
+    #[a3(sanitize(trim))]
+    pub value: String,
+}
+
+#[a3_endpoint(PATCH "/ctx-update/:id")]
+#[a3_security(jwt)]
+#[a3_authorize(authenticated)]
+#[a3_rate_limit(none)]
+async fn ctx_path_and_body(
+    ctx: A3Context,
+    input: Valid<UpdateInput>,
+) -> A3Result<Json<serde_json::Value>, ItemError> {
+    let id: String = ctx.path("id");
+    let input = input.into_inner();
+    Ok(Json(serde_json::json!({"id": id, "value": input.value})))
+}
+
+fn build_ctx_service() -> a3::runtime::Service {
+    let store: TestStore = Arc::new(Mutex::new(HashMap::new()));
+    store.lock().unwrap().insert("a".to_string(), "1".to_string());
+    store.lock().unwrap().insert("b".to_string(), "2".to_string());
+
+    Service::builder()
+        .name("ctx-test")
+        .version("0.1.0")
+        .state(store)
+        .endpoint(ctx_path_test())
+        .endpoint(ctx_state_test())
+        .endpoint(ctx_no_content())
+        .endpoint(ctx_path_and_body())
+        .auth(ScopedAuth)
+        .build()
+        .expect("failed to build service")
+}
+
+#[tokio::test]
+async fn ctx_path_extracts_path_param() {
+    let router = build_ctx_service().into_router();
+    let req = Request::builder()
+        .uri("/ctx-test/42")
+        .header("authorization", "Bearer admin-token")
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let json = body_json(resp).await;
+    assert_eq!(json["id"], "42");
+}
+
+#[tokio::test]
+async fn ctx_user_id_returns_subject() {
+    let router = build_ctx_service().into_router();
+    let req = Request::builder()
+        .uri("/ctx-test/1")
+        .header("authorization", "Bearer admin-token")
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let json = body_json(resp).await;
+    assert_eq!(json["user_id"], "test-user");
+}
+
+#[tokio::test]
+async fn ctx_state_accesses_shared_state() {
+    let router = build_ctx_service().into_router();
+    let req = Request::builder()
+        .uri("/ctx-state-test")
+        .header("authorization", "Bearer admin-token")
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let json = body_json(resp).await;
+    assert_eq!(json["count"], 2);
+}
+
+#[tokio::test]
+async fn no_content_returns_204() {
+    let router = build_ctx_service().into_router();
+    let req = Request::builder()
+        .method("DELETE")
+        .uri("/ctx-delete/42")
+        .header("authorization", "Bearer admin-token")
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn path_and_body_work_together() {
+    let router = build_ctx_service().into_router();
+    let req = Request::builder()
+        .method("PATCH")
+        .uri("/ctx-update/99")
+        .header("authorization", "Bearer admin-token")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"value":"hello"}"#))
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let json = body_json(resp).await;
+    assert_eq!(json["id"], "99");
+    assert_eq!(json["value"], "hello");
 }

@@ -75,7 +75,7 @@ pub fn expand(input: &DeriveInput) -> TokenStream {
         };
 
         status_arms.push(quote! {
-            #pattern => ::axum::http::StatusCode::from_u16(#status).unwrap_or(::axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+            #pattern => ::a3::axum::http::StatusCode::from_u16(#status).unwrap_or(::a3::axum::http::StatusCode::INTERNAL_SERVER_ERROR)
         });
         message_arms.push(quote! {
             #pattern => #message
@@ -99,7 +99,7 @@ pub fn expand(input: &DeriveInput) -> TokenStream {
 
     quote! {
         impl a3::error::A3ErrorInfo for #enum_name {
-            fn status_code(&self) -> ::axum::http::StatusCode {
+            fn status_code(&self) -> ::a3::axum::http::StatusCode {
                 match self {
                     #(#status_arms),*
                 }
@@ -128,8 +128,8 @@ pub fn expand(input: &DeriveInput) -> TokenStream {
             }
         }
 
-        impl ::axum::response::IntoResponse for #enum_name {
-            fn into_response(self) -> ::axum::response::Response {
+        impl ::a3::axum::response::IntoResponse for #enum_name {
+            fn into_response(self) -> ::a3::axum::response::Response {
                 let request_id = ::uuid::Uuid::new_v4().to_string();
                 a3::error::into_a3_response(&self, &request_id)
             }

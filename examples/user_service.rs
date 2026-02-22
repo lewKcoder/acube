@@ -73,11 +73,11 @@ fn user_store() -> UserStore {
 #[a3_authorize(scopes = ["users:create"])]
 #[a3_rate_limit(10, per_minute)]
 async fn create_user(
-    _ctx: A3Context,
-    axum::extract::Extension(store): axum::extract::Extension<UserStore>,
+    ctx: A3Context,
     input: Valid<CreateUserInput>,
 ) -> A3Result<Created<UserOutput>, UserError> {
     let input = input.into_inner();
+    let store = ctx.state::<UserStore>();
     let mut store = store.lock().unwrap();
 
     // Check uniqueness
@@ -104,11 +104,9 @@ async fn create_user(
 #[a3_endpoint(GET "/users/:id")]
 #[a3_security(jwt)]
 #[a3_authorize(scopes = ["users:read"])]
-async fn get_user(
-    _ctx: A3Context,
-    axum::extract::Extension(store): axum::extract::Extension<UserStore>,
-    axum::extract::Path(id): axum::extract::Path<String>,
-) -> A3Result<Json<UserOutput>, UserError> {
+async fn get_user(ctx: A3Context) -> A3Result<Json<UserOutput>, UserError> {
+    let id: String = ctx.path("id");
+    let store = ctx.state::<UserStore>();
     let store = store.lock().unwrap();
     let user = store.get(&id).cloned().ok_or(UserError::NotFound)?;
     Ok(Json(user))
@@ -117,14 +115,12 @@ async fn get_user(
 #[a3_endpoint(DELETE "/users/:id")]
 #[a3_security(jwt)]
 #[a3_authorize(scopes = ["users:delete"])]
-async fn delete_user(
-    _ctx: A3Context,
-    axum::extract::Extension(store): axum::extract::Extension<UserStore>,
-    axum::extract::Path(id): axum::extract::Path<String>,
-) -> A3Result<Json<serde_json::Value>, UserError> {
+async fn delete_user(ctx: A3Context) -> A3Result<NoContent, UserError> {
+    let id: String = ctx.path("id");
+    let store = ctx.state::<UserStore>();
     let mut store = store.lock().unwrap();
     store.remove(&id).ok_or(UserError::NotFound)?;
-    Ok(Json(serde_json::json!({"deleted": true})))
+    Ok(NoContent)
 }
 
 #[a3_endpoint(GET "/health")]
@@ -147,6 +143,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let service = Service::builder()
         .name("user-service")
         .version("1.0.0")
+        .state(store) // Shared state — accessible via ctx.state::<UserStore>()
         .endpoint(create_user())
         .endpoint(get_user())
         .endpoint(delete_user())
@@ -155,11 +152,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .cors_allow_origins(&["http://localhost:3001"])
         .build()?;
 
-    // Convert to router and add shared state
-    let router = service.into_router().layer(axum::extract::Extension(store));
-
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
-    tracing::info!("user-service listening on 0.0.0.0:3000");
-    axum::serve(listener, router).await?;
-    Ok(())
+    a3::serve(service, "0.0.0.0:3000").await
 }

@@ -102,7 +102,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream, syn::
 
     // Extract OpenAPI type information before moving func
     let valid_type = extract_valid_type(&func);
-    let (success_status, error_type) = parse_return_type(&func);
+    let (success_status, error_type, has_content) = parse_return_type(&func);
 
     // Generate code
     let fn_name = func.sig.ident.clone();
@@ -192,6 +192,12 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream, syn::
         None => quote! { vec![] },
     };
 
+    let content_type_expr = if has_content {
+        quote! { Some("application/json".to_string()) }
+    } else {
+        quote! { None }
+    };
+
     Ok(quote! {
         #handler_fn
 
@@ -209,6 +215,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream, syn::
                     request_schema_name: #request_schema_name_expr,
                     error_responses: #error_responses_expr,
                     success_status: #success_status,
+                    content_type: #content_type_expr,
                 }),
             }
         }
@@ -234,43 +241,49 @@ fn extract_valid_type(func: &ItemFn) -> Option<Type> {
     None
 }
 
-/// Parse the return type to extract success status and error type.
-/// Returns (success_status, error_type_option).
-fn parse_return_type(func: &ItemFn) -> (u16, Option<Type>) {
+/// Parse the return type to extract success status, error type, and whether it has content.
+/// Returns (success_status, error_type_option, has_content).
+fn parse_return_type(func: &ItemFn) -> (u16, Option<Type>, bool) {
     let ret = match &func.sig.output {
         ReturnType::Type(_, ty) => ty.as_ref(),
-        _ => return (200, None),
+        _ => return (200, None, true),
     };
 
     // Expect A3Result<T, E> which is Result<T, E>
     let type_path = match ret {
         Type::Path(tp) => tp,
-        _ => return (200, None),
+        _ => return (200, None, true),
     };
 
     let last_seg = match type_path.path.segments.last() {
         Some(s) => s,
-        None => return (200, None),
+        None => return (200, None, true),
     };
 
     // Accept both A3Result and Result
     if last_seg.ident != "A3Result" && last_seg.ident != "Result" {
-        return (200, None);
+        return (200, None, true);
     }
 
     let args = match &last_seg.arguments {
         syn::PathArguments::AngleBracketed(a) => a,
-        _ => return (200, None),
+        _ => return (200, None, true),
     };
 
     let mut iter = args.args.iter();
 
     // First type arg: success type
-    let success_status = match iter.next() {
+    let (success_status, has_content) = match iter.next() {
         Some(syn::GenericArgument::Type(ty)) => {
-            if contains_created(ty) { 201 } else { 200 }
+            if contains_created(ty) {
+                (201, true)
+            } else if contains_no_content(ty) {
+                (204, false)
+            } else {
+                (200, true)
+            }
         }
-        _ => 200,
+        _ => (200, true),
     };
 
     // Second type arg: error type
@@ -281,7 +294,7 @@ fn parse_return_type(func: &ItemFn) -> (u16, Option<Type>) {
         _ => None,
     };
 
-    (success_status, error_type)
+    (success_status, error_type, has_content)
 }
 
 /// Check if a type contains `Created<_>`.
@@ -289,6 +302,16 @@ fn contains_created(ty: &Type) -> bool {
     if let Type::Path(tp) = ty {
         if let Some(seg) = tp.path.segments.last() {
             return seg.ident == "Created";
+        }
+    }
+    false
+}
+
+/// Check if a type is `NoContent`.
+fn contains_no_content(ty: &Type) -> bool {
+    if let Type::Path(tp) = ty {
+        if let Some(seg) = tp.path.segments.last() {
+            return seg.ident == "NoContent";
         }
     }
     false

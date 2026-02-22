@@ -14,6 +14,7 @@ use axum::http::{HeaderName, HeaderValue, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::Response;
 use axum::Router;
+use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::future::Future;
@@ -33,6 +34,53 @@ use crate::rate_limit::{InMemoryBackend, RateLimitBackend, RateLimitOutcome};
 use crate::security::AuthProvider;
 use crate::types::{EndpointAuthorization, EndpointSecurity, HttpMethod, RateLimitConfig};
 
+// ─── SharedState ─────────────────────────────────────────────────────────────
+
+/// Type-erased container for shared application state registered via `Service::builder().state()`.
+///
+/// Stored as a request extension so that `A3Context` can provide `ctx.state::<T>()`.
+#[derive(Clone, Default)]
+pub(crate) struct SharedState {
+    inner: Arc<HashMap<TypeId, Box<dyn CloneableAny>>>,
+}
+
+impl SharedState {
+    /// Retrieve a clone of a stored value by type.
+    pub fn get<T: Clone + Send + Sync + 'static>(&self) -> Option<T> {
+        self.inner
+            .get(&TypeId::of::<T>())
+            .and_then(|boxed| {
+                // Use as_ref() to get &dyn CloneableAny from Box<dyn CloneableAny>,
+                // ensuring vtable dispatch goes to the concrete T's as_any() — not
+                // the blanket CloneableAny impl on Box<dyn CloneableAny> itself.
+                let inner: &dyn CloneableAny = boxed.as_ref();
+                inner.as_any().downcast_ref::<T>()
+            })
+            .cloned()
+    }
+}
+
+/// Trait object that supports cloning and downcasting.
+pub(crate) trait CloneableAny: Send + Sync {
+    fn clone_box(&self) -> Box<dyn CloneableAny>;
+    fn as_any(&self) -> &dyn Any;
+}
+
+impl<T: Clone + Send + Sync + 'static> CloneableAny for T {
+    fn clone_box(&self) -> Box<dyn CloneableAny> {
+        Box::new(self.clone())
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl Clone for Box<dyn CloneableAny> {
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
+}
+
 /// Default payload size limit (1 MB).
 const DEFAULT_PAYLOAD_LIMIT: usize = 1024 * 1024;
 
@@ -46,6 +94,8 @@ pub struct EndpointOpenApi {
     pub error_responses: Vec<crate::error::OpenApiErrorVariant>,
     /// HTTP status code for successful responses.
     pub success_status: u16,
+    /// Content type for successful responses (`None` for 204 No Content).
+    pub content_type: Option<String>,
 }
 
 /// An a³ endpoint registration.
@@ -82,6 +132,7 @@ pub struct ServiceBuilder {
     cors_origins: Vec<String>,
     csp: String,
     extensions: Vec<Box<dyn FnOnce(Router) -> Router + Send>>,
+    state_values: HashMap<TypeId, Box<dyn CloneableAny>>,
     openapi_enabled: bool,
 }
 
@@ -98,6 +149,7 @@ impl ServiceBuilder {
             cors_origins: Vec::new(),
             csp: DEFAULT_CSP.to_string(),
             extensions: Vec::new(),
+            state_values: HashMap::new(),
             openapi_enabled: false,
         }
     }
@@ -204,6 +256,10 @@ impl ServiceBuilder {
     /// ) -> ... { }
     /// ```
     pub fn state<T: Clone + Send + Sync + 'static>(mut self, value: T) -> Self {
+        // Store in state_values for ctx.state::<T>() access
+        self.state_values
+            .insert(TypeId::of::<T>(), Box::new(value.clone()));
+        // Also add as Extension layer for backward compatibility with Extension<T> pattern
         self.extensions.push(Box::new(move |router: Router| {
             router.layer(axum::extract::Extension(value))
         }));
@@ -239,6 +295,10 @@ impl ServiceBuilder {
             .rate_limit_backend
             .unwrap_or_else(|| Arc::new(InMemoryBackend::new()));
 
+        let shared_state = SharedState {
+            inner: Arc::new(self.state_values),
+        };
+
         Ok(Service {
             name,
             version,
@@ -250,6 +310,7 @@ impl ServiceBuilder {
             cors_origins: self.cors_origins,
             csp: self.csp,
             extensions: self.extensions,
+            shared_state,
             openapi_enabled: self.openapi_enabled,
         })
     }
@@ -281,6 +342,7 @@ pub struct Service {
     cors_origins: Vec<String>,
     csp: String,
     extensions: Vec<Box<dyn FnOnce(Router) -> Router + Send>>,
+    shared_state: SharedState,
     openapi_enabled: bool,
 }
 
@@ -403,12 +465,14 @@ impl Service {
                     }
                 }
 
-                // Success response
+                // Success response (204 has no content section)
                 let success_status = openapi.success_status.to_string();
-                responses.insert(
-                    success_status,
-                    serde_json::json!({ "description": "Successful response" }),
-                );
+                let success_response = if openapi.content_type.is_some() {
+                    serde_json::json!({ "description": "Successful response" })
+                } else {
+                    serde_json::json!({ "description": "No content" })
+                };
+                responses.insert(success_status, success_response);
 
                 // Error responses from the error type
                 for variant in &openapi.error_responses {
@@ -638,6 +702,10 @@ impl Service {
             )
         };
         router = router.fallback(fallback_handler);
+
+        // Add SharedState as an extension (for ctx.state::<T>() access)
+        // Applied before user extensions so it's available in the request.
+        router = router.layer(axum::extract::Extension(self.shared_state));
 
         // Apply user-provided shared state (Extension layers)
         for ext in self.extensions {

@@ -84,6 +84,30 @@ impl<T: Serialize> IntoResponse for Created<T> {
     }
 }
 
+/// Successful response with HTTP 204 No Content (empty body).
+///
+/// Use this for endpoints that perform an action but don't return data,
+/// such as DELETE endpoints.
+///
+/// # Example
+/// ```rust,ignore
+/// #[a3_endpoint(DELETE "/items/:id")]
+/// #[a3_security(jwt)]
+/// #[a3_authorize(scopes = ["items:delete"])]
+/// async fn delete_item(ctx: A3Context) -> A3Result<NoContent, ItemError> {
+///     // delete the item...
+///     Ok(NoContent)
+/// }
+/// ```
+#[derive(Debug)]
+pub struct NoContent;
+
+impl IntoResponse for NoContent {
+    fn into_response(self) -> axum::response::Response {
+        StatusCode::NO_CONTENT.into_response()
+    }
+}
+
 /// Result type alias for a³ endpoint handlers.
 pub type A3Result<T, E> = Result<T, E>;
 
