@@ -15,6 +15,7 @@ fn build_test_service() -> a3::runtime::Service {
             handler: axum::routing::get(health_handler),
             security: EndpointSecurity::None,
             rate_limit: None,
+            openapi: None,
         })
         .build()
         .expect("failed to build service")
@@ -211,6 +212,7 @@ async fn service_builder_rejects_duplicate_endpoints() {
             handler: axum::routing::get(health_handler),
             security: EndpointSecurity::None,
             rate_limit: None,
+            openapi: None,
         })
         .endpoint(EndpointRegistration {
             method: HttpMethod::Get,
@@ -218,6 +220,7 @@ async fn service_builder_rejects_duplicate_endpoints() {
             handler: axum::routing::get(health_handler),
             security: EndpointSecurity::None,
             rate_limit: None,
+            openapi: None,
         })
         .build();
     assert!(result.is_err());
@@ -236,6 +239,7 @@ async fn custom_csp_is_applied() {
             handler: axum::routing::get(health_handler),
             security: EndpointSecurity::None,
             rate_limit: None,
+            openapi: None,
         })
         .content_security_policy("default-src 'self'; script-src 'self'")
         .build()
@@ -271,6 +275,7 @@ async fn custom_csp_preserves_user_frame_ancestors() {
             handler: axum::routing::get(health_handler),
             security: EndpointSecurity::None,
             rate_limit: None,
+            openapi: None,
         })
         .content_security_policy("default-src 'self'; frame-ancestors 'self'")
         .build()

@@ -36,6 +36,18 @@ use crate::types::{EndpointSecurity, HttpMethod, RateLimitConfig};
 /// Default payload size limit (1 MB).
 const DEFAULT_PAYLOAD_LIMIT: usize = 1024 * 1024;
 
+/// OpenAPI metadata for an endpoint.
+pub struct EndpointOpenApi {
+    /// JSON Schema for the request body (if any).
+    pub request_schema: Option<serde_json::Value>,
+    /// Type name of the request body schema (for `$ref`).
+    pub request_schema_name: Option<String>,
+    /// Error response variants.
+    pub error_responses: Vec<crate::error::OpenApiErrorVariant>,
+    /// HTTP status code for successful responses.
+    pub success_status: u16,
+}
+
 /// An a³ endpoint registration.
 pub struct EndpointRegistration {
     /// HTTP method.
@@ -48,6 +60,8 @@ pub struct EndpointRegistration {
     pub security: EndpointSecurity,
     /// Rate limit configuration (None = no rate limit).
     pub rate_limit: Option<RateLimitConfig>,
+    /// OpenAPI metadata (None = no OpenAPI info).
+    pub openapi: Option<EndpointOpenApi>,
 }
 
 /// Builder for constructing an a³ `Service`.
@@ -58,6 +72,7 @@ const DEFAULT_CSP: &str = "default-src 'none'; frame-ancestors 'none'";
 pub struct ServiceBuilder {
     name: Option<String>,
     version: Option<String>,
+    description: Option<String>,
     endpoints: Vec<EndpointRegistration>,
     auth_provider: Option<Arc<dyn AuthProvider>>,
     rate_limit_backend: Option<Arc<dyn RateLimitBackend>>,
@@ -65,6 +80,7 @@ pub struct ServiceBuilder {
     cors_origins: Vec<String>,
     csp: String,
     extensions: Vec<Box<dyn FnOnce(Router) -> Router + Send>>,
+    openapi_enabled: bool,
 }
 
 impl ServiceBuilder {
@@ -72,6 +88,7 @@ impl ServiceBuilder {
         Self {
             name: None,
             version: None,
+            description: None,
             endpoints: Vec::new(),
             auth_provider: None,
             rate_limit_backend: None,
@@ -79,6 +96,7 @@ impl ServiceBuilder {
             cors_origins: Vec::new(),
             csp: DEFAULT_CSP.to_string(),
             extensions: Vec::new(),
+            openapi_enabled: false,
         }
     }
 
@@ -91,6 +109,18 @@ impl ServiceBuilder {
     /// Set the service version.
     pub fn version(mut self, version: &str) -> Self {
         self.version = Some(version.to_string());
+        self
+    }
+
+    /// Set the service description (used in OpenAPI info).
+    pub fn description(mut self, desc: &str) -> Self {
+        self.description = Some(desc.to_string());
+        self
+    }
+
+    /// Enable or disable the auto-generated `GET /openapi.json` endpoint.
+    pub fn openapi(mut self, enabled: bool) -> Self {
+        self.openapi_enabled = enabled;
         self
     }
 
@@ -210,6 +240,7 @@ impl ServiceBuilder {
         Ok(Service {
             name,
             version,
+            description: self.description,
             endpoints: self.endpoints,
             auth_provider: self.auth_provider,
             rate_limiter,
@@ -217,6 +248,7 @@ impl ServiceBuilder {
             cors_origins: self.cors_origins,
             csp: self.csp,
             extensions: self.extensions,
+            openapi_enabled: self.openapi_enabled,
         })
     }
 }
@@ -238,6 +270,8 @@ pub struct Service {
     pub name: String,
     /// Service version.
     pub version: String,
+    /// Service description.
+    pub description: Option<String>,
     endpoints: Vec<EndpointRegistration>,
     auth_provider: Option<Arc<dyn AuthProvider>>,
     rate_limiter: Arc<dyn RateLimitBackend>,
@@ -245,6 +279,7 @@ pub struct Service {
     cors_origins: Vec<String>,
     csp: String,
     extensions: Vec<Box<dyn FnOnce(Router) -> Router + Send>>,
+    openapi_enabled: bool,
 }
 
 impl Service {
@@ -253,9 +288,267 @@ impl Service {
         ServiceBuilder::new()
     }
 
+    /// Generate an OpenAPI 3.0.3 JSON document for this service.
+    pub fn openapi_json(&self) -> String {
+        let mut paths = serde_json::Map::new();
+        let mut schemas = serde_json::Map::new();
+        let has_jwt = self
+            .endpoints
+            .iter()
+            .any(|ep| matches!(ep.security, EndpointSecurity::Jwt { .. }));
+
+        for ep in &self.endpoints {
+            // Convert axum path params `:param` → OpenAPI `{param}`
+            let openapi_path = ep
+                .path
+                .split('/')
+                .map(|seg| {
+                    if let Some(stripped) = seg.strip_prefix(':') {
+                        format!("{{{}}}", stripped)
+                    } else {
+                        seg.to_string()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("/");
+
+            let method_str = match ep.method {
+                HttpMethod::Get => "get",
+                HttpMethod::Post => "post",
+                HttpMethod::Put => "put",
+                HttpMethod::Patch => "patch",
+                HttpMethod::Delete => "delete",
+            };
+
+            let mut operation = serde_json::Map::new();
+            operation.insert(
+                "operationId".to_string(),
+                serde_json::Value::String(format!(
+                    "{}{}",
+                    method_str,
+                    openapi_path.replace('/', "_").replace(['{', '}'], "")
+                )),
+            );
+
+            // Path parameters
+            let mut parameters = Vec::new();
+            for seg in ep.path.split('/') {
+                if let Some(param) = seg.strip_prefix(':') {
+                    parameters.push(serde_json::json!({
+                        "name": param,
+                        "in": "path",
+                        "required": true,
+                        "schema": { "type": "string" }
+                    }));
+                }
+            }
+            if !parameters.is_empty() {
+                operation.insert(
+                    "parameters".to_string(),
+                    serde_json::Value::Array(parameters),
+                );
+            }
+
+            // Security
+            match &ep.security {
+                EndpointSecurity::Jwt { scopes } => {
+                    operation.insert(
+                        "security".to_string(),
+                        serde_json::json!([{ "bearerAuth": scopes }]),
+                    );
+                }
+                EndpointSecurity::None => {
+                    operation.insert("security".to_string(), serde_json::json!([]));
+                }
+            }
+
+            // Rate limit extension
+            if let Some(ref rl) = ep.rate_limit {
+                operation.insert(
+                    "x-rate-limit".to_string(),
+                    serde_json::json!({
+                        "max_requests": rl.max_requests,
+                        "window_seconds": rl.window.as_secs()
+                    }),
+                );
+            }
+
+            // Request body and responses from OpenAPI metadata
+            let mut responses = serde_json::Map::new();
+
+            if let Some(ref openapi) = ep.openapi {
+                // Request body
+                if let Some(ref schema_name) = openapi.request_schema_name {
+                    operation.insert(
+                        "requestBody".to_string(),
+                        serde_json::json!({
+                            "required": true,
+                            "content": {
+                                "application/json": {
+                                    "schema": { "$ref": format!("#/components/schemas/{}", schema_name) }
+                                }
+                            }
+                        }),
+                    );
+
+                    // Add schema to components
+                    if let Some(ref schema_val) = openapi.request_schema {
+                        schemas.insert(schema_name.clone(), schema_val.clone());
+                    }
+                }
+
+                // Success response
+                let success_status = openapi.success_status.to_string();
+                responses.insert(
+                    success_status,
+                    serde_json::json!({ "description": "Successful response" }),
+                );
+
+                // Error responses from the error type
+                for variant in &openapi.error_responses {
+                    let status_str = variant.status.to_string();
+                    responses.entry(status_str).or_insert_with(|| {
+                        serde_json::json!({
+                            "description": variant.message,
+                            "content": {
+                                "application/json": {
+                                    "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+                                }
+                            }
+                        })
+                    });
+                }
+            } else {
+                responses.insert(
+                    "200".to_string(),
+                    serde_json::json!({ "description": "Successful response" }),
+                );
+            }
+
+            // Add common error responses for JWT endpoints
+            if matches!(ep.security, EndpointSecurity::Jwt { .. }) {
+                responses.entry("401".to_string()).or_insert_with(|| {
+                    serde_json::json!({
+                        "description": "Unauthorized",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+                            }
+                        }
+                    })
+                });
+                responses.entry("403".to_string()).or_insert_with(|| {
+                    serde_json::json!({
+                        "description": "Forbidden",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+                            }
+                        }
+                    })
+                });
+            }
+            if ep.rate_limit.is_some() {
+                responses.entry("429".to_string()).or_insert_with(|| {
+                    serde_json::json!({
+                        "description": "Rate limit exceeded",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+                            }
+                        }
+                    })
+                });
+            }
+
+            operation
+                .insert("responses".to_string(), serde_json::Value::Object(responses));
+
+            let path_item = paths
+                .entry(openapi_path)
+                .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+            if let serde_json::Value::Object(ref mut map) = path_item {
+                map.insert(
+                    method_str.to_string(),
+                    serde_json::Value::Object(operation),
+                );
+            }
+        }
+
+        // ErrorResponse schema
+        schemas.insert(
+            "ErrorResponse".to_string(),
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "error": {
+                        "type": "object",
+                        "properties": {
+                            "code": { "type": "string" },
+                            "message": { "type": "string" },
+                            "details": {},
+                            "request_id": { "type": "string" },
+                            "retryable": { "type": "boolean" }
+                        },
+                        "required": ["code", "message", "request_id", "retryable"]
+                    }
+                },
+                "required": ["error"]
+            }),
+        );
+
+        let mut components = serde_json::Map::new();
+        components.insert("schemas".to_string(), serde_json::Value::Object(schemas));
+
+        if has_jwt {
+            components.insert(
+                "securitySchemes".to_string(),
+                serde_json::json!({
+                    "bearerAuth": {
+                        "type": "http",
+                        "scheme": "bearer",
+                        "bearerFormat": "JWT"
+                    }
+                }),
+            );
+        }
+
+        let mut info = serde_json::Map::new();
+        info.insert(
+            "title".to_string(),
+            serde_json::Value::String(self.name.clone()),
+        );
+        info.insert(
+            "version".to_string(),
+            serde_json::Value::String(self.version.clone()),
+        );
+        if let Some(ref desc) = self.description {
+            info.insert(
+                "description".to_string(),
+                serde_json::Value::String(desc.clone()),
+            );
+        }
+
+        let doc = serde_json::json!({
+            "openapi": "3.0.3",
+            "info": serde_json::Value::Object(info),
+            "paths": serde_json::Value::Object(paths),
+            "components": serde_json::Value::Object(components),
+        });
+
+        serde_json::to_string_pretty(&doc).unwrap_or_else(|_| "{}".to_string())
+    }
+
     /// Build the axum `Router` with all middleware and endpoints.
     pub fn into_router(self) -> Router {
         let mut router = Router::new();
+
+        // Generate OpenAPI JSON before consuming endpoints (borrow-before-move)
+        let openapi_doc = if self.openapi_enabled {
+            Some(Arc::new(self.openapi_json()))
+        } else {
+            None
+        };
 
         // Audit log: warn about endpoints with no authentication
         for ep in &self.endpoints {
@@ -306,6 +599,24 @@ impl Service {
             if let Some(h) = handler {
                 router = router.route(&path, h);
             }
+        }
+
+        // Auto-register GET /openapi.json if enabled
+        if let Some(openapi_doc) = openapi_doc {
+            let openapi_handler = move || {
+                let doc = openapi_doc.clone();
+                async move {
+                    (
+                        StatusCode::OK,
+                        [(
+                            axum::http::header::CONTENT_TYPE,
+                            HeaderValue::from_static("application/json"),
+                        )],
+                        doc.as_str().to_owned(),
+                    )
+                }
+            };
+            router = router.route("/openapi.json", axum::routing::get(openapi_handler));
         }
 
         // Add fallback for 404

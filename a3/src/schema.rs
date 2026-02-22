@@ -20,6 +20,11 @@ pub trait A3Validate: Sized {
 pub trait A3SchemaInfo {
     /// Return schema metadata for this type.
     fn schema_info() -> SchemaInfo;
+
+    /// Return an OpenAPI 3.0 JSON Schema object for this type.
+    fn openapi_schema() -> serde_json::Value {
+        serde_json::json!({ "type": "object" })
+    }
 }
 
 /// A single field validation error.
@@ -40,6 +45,17 @@ pub struct SchemaInfo {
     pub fields: Vec<FieldInfo>,
 }
 
+/// Constraints on a single field (for OpenAPI generation).
+#[derive(Debug, Clone, Default)]
+pub struct FieldConstraints {
+    pub min_length: Option<usize>,
+    pub max_length: Option<usize>,
+    pub pattern: Option<String>,
+    pub format: Option<String>,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+}
+
 /// Metadata for a single field.
 #[derive(Debug, Clone)]
 pub struct FieldInfo {
@@ -47,6 +63,7 @@ pub struct FieldInfo {
     pub type_name: String,
     pub required: bool,
     pub pii: bool,
+    pub constraints: FieldConstraints,
 }
 
 // ─── Sanitization helpers ───────────────────────────────────────────────────

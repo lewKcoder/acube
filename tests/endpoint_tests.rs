@@ -451,6 +451,7 @@ async fn builder_rejects_jwt_endpoint_without_auth_provider() {
                 scopes: vec!["test".to_string()],
             },
             rate_limit: None,
+            openapi: None,
         })
         .build();
     assert!(result.is_err());
@@ -474,6 +475,7 @@ async fn builder_accepts_jwt_endpoint_with_auth_provider() {
                 scopes: vec!["test".to_string()],
             },
             rate_limit: None,
+            openapi: None,
         })
         .auth(TestAuth)
         .build();
@@ -491,6 +493,7 @@ async fn builder_accepts_no_auth_endpoints_without_provider() {
             handler: axum::routing::get(|| async { "ok" }),
             security: EndpointSecurity::None,
             rate_limit: None,
+            openapi: None,
         })
         .build();
     assert!(result.is_ok());

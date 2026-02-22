@@ -27,6 +27,7 @@ pub fn expand(input: &DeriveInput) -> TokenStream {
     let mut message_arms = Vec::new();
     let mut code_arms = Vec::new();
     let mut retryable_arms = Vec::new();
+    let mut openapi_variants = Vec::new();
 
     for variant in variants {
         let variant_name = &variant.ident;
@@ -85,6 +86,15 @@ pub fn expand(input: &DeriveInput) -> TokenStream {
         retryable_arms.push(quote! {
             #pattern => #retryable
         });
+
+        openapi_variants.push(quote! {
+            a3::error::OpenApiErrorVariant {
+                status: #status,
+                code: #code_str.to_string(),
+                message: #message.to_string(),
+                retryable: #retryable,
+            }
+        });
     }
 
     quote! {
@@ -111,6 +121,10 @@ pub fn expand(input: &DeriveInput) -> TokenStream {
                 match self {
                     #(#retryable_arms),*
                 }
+            }
+
+            fn openapi_responses() -> Vec<a3::error::OpenApiErrorVariant> {
+                vec![#(#openapi_variants),*]
             }
         }
 

@@ -2,7 +2,7 @@
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{Attribute, Ident, ItemFn, Lit};
+use syn::{Attribute, Ident, ItemFn, Lit, ReturnType, Type};
 
 /// Parsed security declaration.
 enum Security {
@@ -45,6 +45,10 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream, syn::
             per: "per_minute".to_string(),
         }, // default 100/min
     };
+
+    // Extract OpenAPI type information before moving func
+    let valid_type = extract_valid_type(&func);
+    let (success_status, error_type) = parse_return_type(&func);
 
     // Generate code
     let fn_name = func.sig.ident.clone();
@@ -108,6 +112,20 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream, syn::
         }
     };
 
+    // Generate OpenAPI metadata expression
+    let request_schema_expr = match &valid_type {
+        Some(ty) => quote! { Some(<#ty as a3::schema::A3SchemaInfo>::openapi_schema()) },
+        None => quote! { None },
+    };
+    let request_schema_name_expr = match &valid_type {
+        Some(ty) => quote! { Some(stringify!(#ty).to_string()) },
+        None => quote! { None },
+    };
+    let error_responses_expr = match &error_type {
+        Some(ty) => quote! { <#ty as a3::error::A3ErrorInfo>::openapi_responses() },
+        None => quote! { vec![] },
+    };
+
     Ok(quote! {
         #handler_fn
 
@@ -119,9 +137,104 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream, syn::
                 handler: #route_fn(#handler_name),
                 security: #security_expr,
                 rate_limit: #rate_limit_expr,
+                openapi: Some(a3::runtime::EndpointOpenApi {
+                    request_schema: #request_schema_expr,
+                    request_schema_name: #request_schema_name_expr,
+                    error_responses: #error_responses_expr,
+                    success_status: #success_status,
+                }),
             }
         }
     })
+}
+
+/// Extract the inner type from `Valid<T>` in the function parameters.
+fn extract_valid_type(func: &ItemFn) -> Option<Type> {
+    for input in &func.sig.inputs {
+        if let syn::FnArg::Typed(pat_type) = input {
+            if let Type::Path(type_path) = pat_type.ty.as_ref() {
+                let last_seg = type_path.path.segments.last()?;
+                if last_seg.ident == "Valid" {
+                    if let syn::PathArguments::AngleBracketed(args) = &last_seg.arguments {
+                        if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
+                            return Some(inner.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Parse the return type to extract success status and error type.
+/// Returns (success_status, error_type_option).
+fn parse_return_type(func: &ItemFn) -> (u16, Option<Type>) {
+    let ret = match &func.sig.output {
+        ReturnType::Type(_, ty) => ty.as_ref(),
+        _ => return (200, None),
+    };
+
+    // Expect A3Result<T, E> which is Result<T, E>
+    let type_path = match ret {
+        Type::Path(tp) => tp,
+        _ => return (200, None),
+    };
+
+    let last_seg = match type_path.path.segments.last() {
+        Some(s) => s,
+        None => return (200, None),
+    };
+
+    // Accept both A3Result and Result
+    if last_seg.ident != "A3Result" && last_seg.ident != "Result" {
+        return (200, None);
+    }
+
+    let args = match &last_seg.arguments {
+        syn::PathArguments::AngleBracketed(a) => a,
+        _ => return (200, None),
+    };
+
+    let mut iter = args.args.iter();
+
+    // First type arg: success type
+    let success_status = match iter.next() {
+        Some(syn::GenericArgument::Type(ty)) => {
+            if contains_created(ty) { 201 } else { 200 }
+        }
+        _ => 200,
+    };
+
+    // Second type arg: error type
+    let error_type = match iter.next() {
+        Some(syn::GenericArgument::Type(ty)) => {
+            if is_never_type(ty) { None } else { Some(ty.clone()) }
+        }
+        _ => None,
+    };
+
+    (success_status, error_type)
+}
+
+/// Check if a type contains `Created<_>`.
+fn contains_created(ty: &Type) -> bool {
+    if let Type::Path(tp) = ty {
+        if let Some(seg) = tp.path.segments.last() {
+            return seg.ident == "Created";
+        }
+    }
+    false
+}
+
+/// Check if a type is `Never`.
+fn is_never_type(ty: &Type) -> bool {
+    if let Type::Path(tp) = ty {
+        if let Some(seg) = tp.path.segments.last() {
+            return seg.ident == "Never";
+        }
+    }
+    false
 }
 
 /// Parse `METHOD "path"` from the attribute arguments.

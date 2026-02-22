@@ -5,6 +5,15 @@ use axum::response::{IntoResponse, Response};
 
 use crate::types::{ErrorBody, ErrorResponse};
 
+/// Metadata for a single error variant (for OpenAPI generation).
+#[derive(Debug, Clone)]
+pub struct OpenApiErrorVariant {
+    pub status: u16,
+    pub code: String,
+    pub message: String,
+    pub retryable: bool,
+}
+
 /// Trait for a³ error types that can be converted to structured HTTP responses.
 pub trait A3ErrorInfo {
     /// HTTP status code for this error variant.
@@ -15,6 +24,14 @@ pub trait A3ErrorInfo {
     fn code(&self) -> &str;
     /// Whether the client should retry this request.
     fn retryable(&self) -> bool;
+
+    /// Return OpenAPI response metadata for all variants of this error type.
+    fn openapi_responses() -> Vec<OpenApiErrorVariant>
+    where
+        Self: Sized,
+    {
+        Vec::new()
+    }
 }
 
 /// Construct a structured JSON error response.
@@ -113,5 +130,18 @@ impl A3ErrorInfo for A3FrameworkError {
 
     fn retryable(&self) -> bool {
         matches!(self, Self::RateLimitExceeded | Self::Internal)
+    }
+
+    fn openapi_responses() -> Vec<OpenApiErrorVariant> {
+        vec![
+            OpenApiErrorVariant { status: 404, code: "not_found".to_string(), message: "Not found".to_string(), retryable: false },
+            OpenApiErrorVariant { status: 405, code: "method_not_allowed".to_string(), message: "Method not allowed".to_string(), retryable: false },
+            OpenApiErrorVariant { status: 413, code: "payload_too_large".to_string(), message: "Payload too large".to_string(), retryable: false },
+            OpenApiErrorVariant { status: 429, code: "rate_limit_exceeded".to_string(), message: "Rate limit exceeded".to_string(), retryable: true },
+            OpenApiErrorVariant { status: 401, code: "unauthorized".to_string(), message: "Unauthorized".to_string(), retryable: false },
+            OpenApiErrorVariant { status: 403, code: "forbidden".to_string(), message: "Forbidden".to_string(), retryable: false },
+            OpenApiErrorVariant { status: 400, code: "bad_request".to_string(), message: "Bad request".to_string(), retryable: false },
+            OpenApiErrorVariant { status: 500, code: "internal_error".to_string(), message: "Internal server error".to_string(), retryable: true },
+        ]
     }
 }

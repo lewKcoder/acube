@@ -62,6 +62,8 @@ pub fn expand(input: &DeriveInput) -> TokenStream {
     let mut validate_stmts = Vec::new();
     let mut known_field_names = Vec::new();
     let mut field_infos = Vec::new();
+    let mut openapi_properties = Vec::new();
+    let mut openapi_required = Vec::new();
 
     for field in fields {
         let field_name = field.ident.as_ref().unwrap();
@@ -83,14 +85,57 @@ pub fn expand(input: &DeriveInput) -> TokenStream {
         );
         let pii = attrs.pii;
 
+        // Build FieldConstraints
+        let min_length_expr = match attrs.min_length {
+            Some(v) => quote! { Some(#v) },
+            None => quote! { None },
+        };
+        let max_length_expr = match attrs.max_length {
+            Some(v) => quote! { Some(#v) },
+            None => quote! { None },
+        };
+        let pattern_expr = match &attrs.pattern {
+            Some(v) => quote! { Some(#v.to_string()) },
+            None => quote! { None },
+        };
+        let format_expr = match &attrs.format {
+            Some(v) => quote! { Some(#v.to_string()) },
+            None => quote! { None },
+        };
+        let min_expr = match (attrs.min_i64, attrs.min_f64) {
+            (Some(v), _) => quote! { Some(#v as f64) },
+            (_, Some(v)) => quote! { Some(#v) },
+            _ => quote! { None },
+        };
+        let max_expr = match (attrs.max_i64, attrs.max_f64) {
+            (Some(v), _) => quote! { Some(#v as f64) },
+            (_, Some(v)) => quote! { Some(#v) },
+            _ => quote! { None },
+        };
+
         field_infos.push(quote! {
             a3::schema::FieldInfo {
                 name: #field_name_str.to_string(),
                 type_name: #type_name_str.to_string(),
                 required: !#is_option,
                 pii: #pii,
+                constraints: a3::schema::FieldConstraints {
+                    min_length: #min_length_expr,
+                    max_length: #max_length_expr,
+                    pattern: #pattern_expr,
+                    format: #format_expr,
+                    min: #min_expr,
+                    max: #max_expr,
+                },
             }
         });
+
+        // Collect OpenAPI property info
+        let prop_token = gen_openapi_property(&field_name_str, &kind, &attrs);
+        openapi_properties.push(prop_token);
+        if !is_option {
+            openapi_required.push(field_name_str.clone());
+        }
 
         // Generate validation + sanitization code for this field
         let stmts = gen_field_validation(field_name, &field_name_str, &kind, &attrs);
@@ -122,6 +167,20 @@ pub fn expand(input: &DeriveInput) -> TokenStream {
                     name: stringify!(#struct_name).to_string(),
                     fields: vec![#(#field_infos),*],
                 }
+            }
+
+            fn openapi_schema() -> serde_json::Value {
+                let mut properties = serde_json::Map::new();
+                #(#openapi_properties)*
+                let required: Vec<serde_json::Value> = vec![#(serde_json::Value::String(#openapi_required.to_string())),*];
+                let mut schema = serde_json::Map::new();
+                schema.insert("type".to_string(), serde_json::Value::String("object".to_string()));
+                schema.insert("properties".to_string(), serde_json::Value::Object(properties));
+                if !required.is_empty() {
+                    schema.insert("required".to_string(), serde_json::Value::Array(required));
+                }
+                schema.insert("additionalProperties".to_string(), serde_json::Value::Bool(false));
+                serde_json::Value::Object(schema)
             }
         }
     }
@@ -392,6 +451,111 @@ fn gen_vec_string_validation(
     quote! {
         for (__idx, item) in self.#field_name.iter_mut().enumerate() {
             #(#inner_checks)*
+        }
+    }
+}
+
+/// Generate a token stream that inserts an OpenAPI property for a field.
+fn gen_openapi_property(field_name_str: &str, kind: &FieldKind, attrs: &FieldAttrs) -> TokenStream {
+    // Determine base OpenAPI type and format
+    let (oa_type, oa_format, is_array) = match kind {
+        FieldKind::String | FieldKind::OptionString => ("string", None, false),
+        FieldKind::I32 | FieldKind::OptionI32 => ("integer", Some("int32"), false),
+        FieldKind::I64 | FieldKind::OptionI64 => ("integer", Some("int64"), false),
+        FieldKind::F64 | FieldKind::OptionF64 => ("number", Some("double"), false),
+        FieldKind::Bool | FieldKind::OptionBool => ("boolean", None, false),
+        FieldKind::VecString => ("string", None, true),
+        FieldKind::VecI32 => ("integer", Some("int32"), true),
+        FieldKind::VecI64 => ("integer", Some("int64"), true),
+        FieldKind::VecF64 => ("number", Some("double"), true),
+        FieldKind::VecBool => ("boolean", None, true),
+        FieldKind::Other => ("object", None, false),
+    };
+
+    // Build constraint insertions
+    let mut constraint_stmts = Vec::new();
+
+    if let Some(min_len) = attrs.min_length {
+        constraint_stmts.push(quote! {
+            prop.insert("minLength".to_string(), serde_json::Value::Number(serde_json::Number::from(#min_len)));
+        });
+    }
+    if let Some(max_len) = attrs.max_length {
+        constraint_stmts.push(quote! {
+            prop.insert("maxLength".to_string(), serde_json::Value::Number(serde_json::Number::from(#max_len)));
+        });
+    }
+    if let Some(ref pattern) = attrs.pattern {
+        constraint_stmts.push(quote! {
+            prop.insert("pattern".to_string(), serde_json::Value::String(#pattern.to_string()));
+        });
+    }
+    // Use constraint format (email/uuid) which overrides type-level format
+    if let Some(ref fmt) = attrs.format {
+        constraint_stmts.push(quote! {
+            prop.insert("format".to_string(), serde_json::Value::String(#fmt.to_string()));
+        });
+    }
+    if let Some(min_i) = attrs.min_i64 {
+        let min_f = min_i as f64;
+        constraint_stmts.push(quote! {
+            prop.insert("minimum".to_string(), serde_json::json!(#min_f));
+        });
+    }
+    if let Some(min_f) = attrs.min_f64 {
+        constraint_stmts.push(quote! {
+            prop.insert("minimum".to_string(), serde_json::json!(#min_f));
+        });
+    }
+    if let Some(max_i) = attrs.max_i64 {
+        let max_f = max_i as f64;
+        constraint_stmts.push(quote! {
+            prop.insert("maximum".to_string(), serde_json::json!(#max_f));
+        });
+    }
+    if let Some(max_f) = attrs.max_f64 {
+        constraint_stmts.push(quote! {
+            prop.insert("maximum".to_string(), serde_json::json!(#max_f));
+        });
+    }
+
+    if is_array {
+        // Array type: { "type": "array", "items": { "type": "...", ... } }
+        let format_stmt = match oa_format {
+            Some(fmt) => quote! {
+                items.insert("format".to_string(), serde_json::Value::String(#fmt.to_string()));
+            },
+            None => quote! {},
+        };
+        quote! {
+            {
+                let mut prop = serde_json::Map::new();
+                prop.insert("type".to_string(), serde_json::Value::String("array".to_string()));
+                let mut items = serde_json::Map::new();
+                items.insert("type".to_string(), serde_json::Value::String(#oa_type.to_string()));
+                #format_stmt
+                #(#constraint_stmts)*
+                prop.insert("items".to_string(), serde_json::Value::Object(items));
+                properties.insert(#field_name_str.to_string(), serde_json::Value::Object(prop));
+            }
+        }
+    } else {
+        let format_stmt = match (oa_format, &attrs.format) {
+            // If attrs.format is set, it's already handled in constraint_stmts
+            (_, Some(_)) => quote! {},
+            (Some(fmt), None) => quote! {
+                prop.insert("format".to_string(), serde_json::Value::String(#fmt.to_string()));
+            },
+            (None, None) => quote! {},
+        };
+        quote! {
+            {
+                let mut prop = serde_json::Map::new();
+                prop.insert("type".to_string(), serde_json::Value::String(#oa_type.to_string()));
+                #format_stmt
+                #(#constraint_stmts)*
+                properties.insert(#field_name_str.to_string(), serde_json::Value::Object(prop));
+            }
         }
     }
 }
