@@ -492,3 +492,260 @@ fn url_random_string_invalid() {
     let err = input.validate().unwrap_err();
     assert_eq!(err[0].code, "format");
 }
+
+// ─── Nested A3Schema validation tests ────────────────────────────────────────
+
+#[derive(A3Schema, Debug, Deserialize)]
+struct InnerInput {
+    #[a3(min_length = 1, max_length = 50)]
+    #[a3(sanitize(trim))]
+    pub name: String,
+
+    #[a3(min = 0, max = 100)]
+    pub value: i32,
+}
+
+#[derive(A3Schema, Debug, Deserialize)]
+struct OuterInput {
+    #[a3(min_length = 1)]
+    pub title: String,
+    pub inner: InnerInput,
+}
+
+#[derive(A3Schema, Debug, Deserialize)]
+struct OuterOptionInput {
+    pub inner: Option<InnerInput>,
+}
+
+#[derive(A3Schema, Debug, Deserialize)]
+struct OuterVecInput {
+    pub items: Vec<InnerInput>,
+}
+
+#[test]
+fn nested_struct_valid() {
+    let mut input = OuterInput {
+        title: "hello".to_string(),
+        inner: InnerInput {
+            name: "item".to_string(),
+            value: 50,
+        },
+    };
+    assert!(input.validate().is_ok());
+}
+
+#[test]
+fn nested_struct_inner_invalid() {
+    let mut input = OuterInput {
+        title: "hello".to_string(),
+        inner: InnerInput {
+            name: "".to_string(), // too short
+            value: 50,
+        },
+    };
+    let err = input.validate().unwrap_err();
+    assert_eq!(err.len(), 1);
+    assert_eq!(err[0].field, "inner.name");
+    assert_eq!(err[0].code, "min_length");
+}
+
+#[test]
+fn nested_struct_both_invalid() {
+    let mut input = OuterInput {
+        title: "".to_string(), // outer invalid
+        inner: InnerInput {
+            name: "ok".to_string(),
+            value: 200, // inner invalid
+        },
+    };
+    let err = input.validate().unwrap_err();
+    assert!(err.len() >= 2);
+    assert!(err.iter().any(|e| e.field == "title"));
+    assert!(err.iter().any(|e| e.field == "inner.value"));
+}
+
+#[test]
+fn nested_struct_sanitization() {
+    let mut input = OuterInput {
+        title: "test".to_string(),
+        inner: InnerInput {
+            name: "  padded  ".to_string(),
+            value: 10,
+        },
+    };
+    let _ = input.validate();
+    assert_eq!(input.inner.name, "padded");
+}
+
+#[test]
+fn nested_option_none_valid() {
+    let mut input = OuterOptionInput { inner: None };
+    assert!(input.validate().is_ok());
+}
+
+#[test]
+fn nested_option_some_valid() {
+    let mut input = OuterOptionInput {
+        inner: Some(InnerInput {
+            name: "ok".to_string(),
+            value: 50,
+        }),
+    };
+    assert!(input.validate().is_ok());
+}
+
+#[test]
+fn nested_option_some_invalid() {
+    let mut input = OuterOptionInput {
+        inner: Some(InnerInput {
+            name: "".to_string(),
+            value: 50,
+        }),
+    };
+    let err = input.validate().unwrap_err();
+    assert_eq!(err[0].field, "inner.name");
+}
+
+#[test]
+fn nested_vec_valid() {
+    let mut input = OuterVecInput {
+        items: vec![
+            InnerInput {
+                name: "a".to_string(),
+                value: 1,
+            },
+            InnerInput {
+                name: "b".to_string(),
+                value: 2,
+            },
+        ],
+    };
+    assert!(input.validate().is_ok());
+}
+
+#[test]
+fn nested_vec_element_invalid() {
+    let mut input = OuterVecInput {
+        items: vec![
+            InnerInput {
+                name: "ok".to_string(),
+                value: 1,
+            },
+            InnerInput {
+                name: "".to_string(), // invalid
+                value: 200,           // also invalid
+            },
+        ],
+    };
+    let err = input.validate().unwrap_err();
+    assert!(err.iter().any(|e| e.field == "items[1].name"));
+    assert!(err.iter().any(|e| e.field == "items[1].value"));
+}
+
+#[test]
+fn nested_vec_empty_valid() {
+    let mut input = OuterVecInput { items: vec![] };
+    assert!(input.validate().is_ok());
+}
+
+#[test]
+fn nested_vec_multiple_elements_invalid() {
+    let mut input = OuterVecInput {
+        items: vec![
+            InnerInput {
+                name: "".to_string(),
+                value: 1,
+            },
+            InnerInput {
+                name: "".to_string(),
+                value: 2,
+            },
+        ],
+    };
+    let err = input.validate().unwrap_err();
+    assert!(err.iter().any(|e| e.field == "items[0].name"));
+    assert!(err.iter().any(|e| e.field == "items[1].name"));
+}
+
+// ─── one_of validation tests ─────────────────────────────────────────────────
+
+#[derive(A3Schema, Debug, Deserialize)]
+struct StatusInput {
+    #[a3(one_of = ["draft", "published", "archived"])]
+    pub status: String,
+}
+
+#[derive(A3Schema, Debug, Deserialize)]
+struct OptionalStatusInput {
+    #[a3(one_of = ["active", "inactive"])]
+    pub status: Option<String>,
+}
+
+#[test]
+fn one_of_valid_value() {
+    let mut input = StatusInput {
+        status: "draft".to_string(),
+    };
+    assert!(input.validate().is_ok());
+}
+
+#[test]
+fn one_of_another_valid_value() {
+    let mut input = StatusInput {
+        status: "published".to_string(),
+    };
+    assert!(input.validate().is_ok());
+}
+
+#[test]
+fn one_of_invalid_value() {
+    let mut input = StatusInput {
+        status: "unknown".to_string(),
+    };
+    let err = input.validate().unwrap_err();
+    assert_eq!(err.len(), 1);
+    assert_eq!(err[0].code, "one_of");
+    assert_eq!(err[0].field, "status");
+    assert!(err[0].message.contains("draft"));
+}
+
+#[test]
+fn one_of_empty_string_invalid() {
+    let mut input = StatusInput {
+        status: "".to_string(),
+    };
+    let err = input.validate().unwrap_err();
+    assert_eq!(err[0].code, "one_of");
+}
+
+#[test]
+fn one_of_case_sensitive() {
+    let mut input = StatusInput {
+        status: "Draft".to_string(),
+    };
+    let err = input.validate().unwrap_err();
+    assert_eq!(err[0].code, "one_of");
+}
+
+#[test]
+fn one_of_option_none_valid() {
+    let mut input = OptionalStatusInput { status: None };
+    assert!(input.validate().is_ok());
+}
+
+#[test]
+fn one_of_option_some_valid() {
+    let mut input = OptionalStatusInput {
+        status: Some("active".to_string()),
+    };
+    assert!(input.validate().is_ok());
+}
+
+#[test]
+fn one_of_option_some_invalid() {
+    let mut input = OptionalStatusInput {
+        status: Some("deleted".to_string()),
+    };
+    let err = input.validate().unwrap_err();
+    assert_eq!(err[0].code, "one_of");
+}

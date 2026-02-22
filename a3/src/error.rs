@@ -67,6 +67,33 @@ pub fn into_a3_response(err: &(impl A3ErrorInfo + std::fmt::Debug), request_id: 
     )
 }
 
+/// Error type for custom authorization functions.
+///
+/// Used with `#[a3_authorize(custom = "fn_name")]` to return authorization failures.
+#[derive(Debug)]
+pub enum A3AuthError {
+    /// HTTP 403 Forbidden with custom message.
+    Forbidden(String),
+}
+
+impl IntoResponse for A3AuthError {
+    fn into_response(self) -> Response {
+        match self {
+            A3AuthError::Forbidden(msg) => {
+                let request_id = uuid::Uuid::new_v4().to_string();
+                error_response(
+                    StatusCode::FORBIDDEN,
+                    "forbidden",
+                    &msg,
+                    &request_id,
+                    false,
+                    None,
+                )
+            }
+        }
+    }
+}
+
 /// Framework-level errors (not user-defined).
 #[derive(Debug, thiserror::Error)]
 pub enum A3FrameworkError {

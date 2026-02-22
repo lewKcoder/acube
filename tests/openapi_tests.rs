@@ -469,6 +469,90 @@ fn openapi_json_nocontent_status_204() {
     assert_eq!(delete_user["responses"]["204"]["description"], "No content");
 }
 
+// ─── one_of enum OpenAPI tests ────────────────────────────────────────────
+
+#[derive(A3Schema, Debug, serde::Deserialize)]
+struct OneOfTestInput {
+    #[a3(one_of = ["draft", "published", "archived"])]
+    pub status: String,
+
+    #[a3(min_length = 1)]
+    pub title: String,
+}
+
+#[test]
+fn openapi_schema_one_of_has_enum() {
+    let schema = OneOfTestInput::openapi_schema();
+    let status = &schema["properties"]["status"];
+    assert_eq!(status["type"], "string");
+    let enum_values = status["enum"].as_array().unwrap();
+    assert_eq!(enum_values.len(), 3);
+    assert!(enum_values.contains(&serde_json::json!("draft")));
+    assert!(enum_values.contains(&serde_json::json!("published")));
+    assert!(enum_values.contains(&serde_json::json!("archived")));
+}
+
+#[test]
+fn openapi_schema_one_of_non_enum_field_unchanged() {
+    let schema = OneOfTestInput::openapi_schema();
+    let title = &schema["properties"]["title"];
+    assert_eq!(title["type"], "string");
+    assert!(title["enum"].is_null());
+}
+
+// ─── Nested struct OpenAPI tests ─────────────────────────────────────────
+
+#[derive(A3Schema, Debug, serde::Deserialize)]
+struct NestedInner {
+    #[a3(min_length = 1)]
+    pub name: String,
+}
+
+#[derive(A3Schema, Debug, serde::Deserialize)]
+struct NestedOuter {
+    pub title: String,
+    pub inner: NestedInner,
+    pub items: Vec<NestedInner>,
+    pub opt: Option<NestedInner>,
+}
+
+#[test]
+fn openapi_nested_struct_is_object() {
+    let schema = NestedOuter::openapi_schema();
+    let inner = &schema["properties"]["inner"];
+    assert_eq!(inner["type"], "object");
+}
+
+#[test]
+fn openapi_nested_vec_is_array_of_objects() {
+    let schema = NestedOuter::openapi_schema();
+    let items = &schema["properties"]["items"];
+    assert_eq!(items["type"], "array");
+    assert_eq!(items["items"]["type"], "object");
+}
+
+#[test]
+fn openapi_nested_option_is_object() {
+    let schema = NestedOuter::openapi_schema();
+    let opt = &schema["properties"]["opt"];
+    assert_eq!(opt["type"], "object");
+}
+
+#[test]
+fn openapi_nested_option_not_required() {
+    let schema = NestedOuter::openapi_schema();
+    let required = schema["required"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert!(required.contains(&"title"));
+    assert!(required.contains(&"inner"));
+    assert!(required.contains(&"items"));
+    assert!(!required.contains(&"opt"));
+}
+
 // ─── Default disabled tests ────────────────────────────────────────────────
 
 #[tokio::test]

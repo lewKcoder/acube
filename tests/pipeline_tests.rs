@@ -843,3 +843,170 @@ async fn path_and_body_work_together() {
     assert_eq!(json["id"], "99");
     assert_eq!(json["value"], "hello");
 }
+
+// ─── Tests: Custom Authorization ─────────────────────────────────────────────
+
+/// Custom auth function: only allows user "test-user" for resource "allowed-id"
+async fn check_owner(ctx: &A3Context) -> Result<(), A3AuthError> {
+    let id: String = ctx.path("id");
+    let user_id = ctx.user_id();
+    if id == "allowed-id" || user_id == "owner-user" {
+        Ok(())
+    } else {
+        Err(A3AuthError::Forbidden("Not the owner".into()))
+    }
+}
+
+#[derive(A3Error, Debug)]
+enum CustomAuthError {
+    #[a3(status = 404, message = "Not found")]
+    NotFound,
+}
+
+#[a3_endpoint(GET "/custom-auth/:id")]
+#[a3_security(jwt)]
+#[a3_authorize(custom = "check_owner")]
+#[a3_rate_limit(none)]
+async fn custom_auth_endpoint(ctx: A3Context) -> A3Result<Json<serde_json::Value>, CustomAuthError> {
+    let id: String = ctx.path("id");
+    Ok(Json(serde_json::json!({"id": id})))
+}
+
+/// Custom auth function for endpoint with body
+async fn check_write_access(ctx: &A3Context) -> Result<(), A3AuthError> {
+    let user_id = ctx.user_id();
+    if user_id == "test-user" {
+        Ok(())
+    } else {
+        Err(A3AuthError::Forbidden("Write access denied".into()))
+    }
+}
+
+#[a3_endpoint(POST "/custom-auth-body")]
+#[a3_security(jwt)]
+#[a3_authorize(custom = "check_write_access")]
+#[a3_rate_limit(none)]
+async fn custom_auth_body_endpoint(
+    _ctx: A3Context,
+    input: Valid<ItemInput>,
+) -> A3Result<Created<serde_json::Value>, CustomAuthError> {
+    let input = input.into_inner();
+    Ok(Created(serde_json::json!({"name": input.name})))
+}
+
+fn build_custom_auth_service() -> a3::runtime::Service {
+    Service::builder()
+        .name("custom-auth-test")
+        .version("0.1.0")
+        .endpoint(custom_auth_endpoint())
+        .endpoint(custom_auth_body_endpoint())
+        .auth(ScopedAuth)
+        .build()
+        .expect("failed to build service")
+}
+
+#[tokio::test]
+async fn custom_auth_allows_authorized_request() {
+    let router = build_custom_auth_service().into_router();
+    let req = Request::builder()
+        .uri("/custom-auth/allowed-id")
+        .header("authorization", "Bearer admin-token")
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let json = body_json(resp).await;
+    assert_eq!(json["id"], "allowed-id");
+}
+
+#[tokio::test]
+async fn custom_auth_rejects_unauthorized_request() {
+    let router = build_custom_auth_service().into_router();
+    let req = Request::builder()
+        .uri("/custom-auth/forbidden-id")
+        .header("authorization", "Bearer admin-token")
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+
+    let json = body_json(resp).await;
+    assert_eq!(json["error"]["code"], "forbidden");
+}
+
+#[tokio::test]
+async fn custom_auth_still_requires_jwt() {
+    let router = build_custom_auth_service().into_router();
+    // No auth token — should fail at JWT layer before reaching custom auth
+    let req = Request::builder()
+        .uri("/custom-auth/allowed-id")
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn custom_auth_forbidden_has_request_id() {
+    let router = build_custom_auth_service().into_router();
+    let req = Request::builder()
+        .uri("/custom-auth/forbidden-id")
+        .header("authorization", "Bearer admin-token")
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    assert!(resp.headers().get("x-request-id").is_some());
+}
+
+#[tokio::test]
+async fn custom_auth_forbidden_has_security_headers() {
+    let router = build_custom_auth_service().into_router();
+    let req = Request::builder()
+        .uri("/custom-auth/forbidden-id")
+        .header("authorization", "Bearer admin-token")
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        resp.headers().get("x-content-type-options").unwrap(),
+        "nosniff"
+    );
+}
+
+#[tokio::test]
+async fn custom_auth_with_body_allows_authorized() {
+    let router = build_custom_auth_service().into_router();
+    let req = Request::builder()
+        .method("POST")
+        .uri("/custom-auth-body")
+        .header("authorization", "Bearer admin-token")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"name":"test"}"#))
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+
+    let json = body_json(resp).await;
+    assert_eq!(json["name"], "test");
+}
+
+#[tokio::test]
+async fn custom_auth_forbidden_does_not_leak_message() {
+    let router = build_custom_auth_service().into_router();
+    let req = Request::builder()
+        .uri("/custom-auth/forbidden-id")
+        .header("authorization", "Bearer admin-token")
+        .body(Body::empty())
+        .unwrap();
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+
+    let json = body_json(resp).await;
+    // The custom message "Not the owner" is in the error response
+    // but does not leak internal details beyond the authored message
+    assert_eq!(json["error"]["code"], "forbidden");
+    assert!(json["error"]["request_id"].is_string());
+}

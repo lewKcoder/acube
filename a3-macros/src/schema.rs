@@ -19,6 +19,7 @@ struct FieldAttrs {
     sanitize_trim: bool,
     sanitize_lowercase: bool,
     sanitize_strip_html: bool,
+    one_of: Option<Vec<String>>,
 }
 
 /// Classify the outermost type of a field for code generation.
@@ -39,6 +40,9 @@ enum FieldKind {
     VecI64,
     VecF64,
     VecBool,
+    NestedStruct,
+    OptionNestedStruct,
+    VecNestedStruct,
     Other,
 }
 
@@ -82,6 +86,7 @@ pub fn expand(input: &DeriveInput) -> TokenStream {
                 | FieldKind::OptionI64
                 | FieldKind::OptionF64
                 | FieldKind::OptionBool
+                | FieldKind::OptionNestedStruct
         );
         let pii = attrs.pii;
 
@@ -206,6 +211,13 @@ fn gen_field_validation(
             // Vec of non-string: no special validation beyond existence
             quote! {}
         }
+        FieldKind::NestedStruct => gen_nested_validation(field_name, field_name_str, false, false),
+        FieldKind::OptionNestedStruct => {
+            gen_nested_validation(field_name, field_name_str, true, false)
+        }
+        FieldKind::VecNestedStruct => {
+            gen_nested_validation(field_name, field_name_str, false, true)
+        }
         FieldKind::Bool | FieldKind::OptionBool => quote! {},
         FieldKind::Other => quote! {},
     }
@@ -282,6 +294,22 @@ fn gen_string_validation(
                     message: format!("Invalid {} format", #fmt_str),
                     code: "format".to_string(),
                 });
+            }
+        });
+    }
+
+    if let Some(ref values) = attrs.one_of {
+        let allowed: Vec<&str> = values.iter().map(|s| s.as_str()).collect();
+        checks.push(quote! {
+            {
+                let __a3_allowed: &[&str] = &[#(#allowed),*];
+                if !__a3_allowed.contains(&val.as_str()) {
+                    errors.push(a3::schema::ValidationError {
+                        field: #field_name_str.to_string(),
+                        message: format!("Must be one of: {}", __a3_allowed.join(", ")),
+                        code: "one_of".to_string(),
+                    });
+                }
             }
         });
     }
@@ -456,6 +484,49 @@ fn gen_vec_string_validation(
     }
 }
 
+fn gen_nested_validation(
+    field_name: &Ident,
+    field_name_str: &str,
+    is_option: bool,
+    is_vec: bool,
+) -> TokenStream {
+    if is_vec {
+        quote! {
+            for (__idx, item) in self.#field_name.iter_mut().enumerate() {
+                if let Err(nested_errors) = item.validate() {
+                    for mut e in nested_errors {
+                        e.field = format!("{}[{}].{}", #field_name_str, __idx, e.field);
+                        errors.push(e);
+                    }
+                }
+            }
+        }
+    } else if is_option {
+        quote! {
+            if let Some(ref mut item) = self.#field_name {
+                if let Err(nested_errors) = item.validate() {
+                    for mut e in nested_errors {
+                        e.field = format!("{}.{}", #field_name_str, e.field);
+                        errors.push(e);
+                    }
+                }
+            }
+        }
+    } else {
+        quote! {
+            {
+                let item = &mut self.#field_name;
+                if let Err(nested_errors) = item.validate() {
+                    for mut e in nested_errors {
+                        e.field = format!("{}.{}", #field_name_str, e.field);
+                        errors.push(e);
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Generate a token stream that inserts an OpenAPI property for a field.
 fn gen_openapi_property(field_name_str: &str, kind: &FieldKind, attrs: &FieldAttrs) -> TokenStream {
     // Determine base OpenAPI type and format
@@ -470,6 +541,8 @@ fn gen_openapi_property(field_name_str: &str, kind: &FieldKind, attrs: &FieldAtt
         FieldKind::VecI64 => ("integer", Some("int64"), true),
         FieldKind::VecF64 => ("number", Some("double"), true),
         FieldKind::VecBool => ("boolean", None, true),
+        FieldKind::NestedStruct | FieldKind::OptionNestedStruct => ("object", None, false),
+        FieldKind::VecNestedStruct => ("object", None, true),
         FieldKind::Other => ("object", None, false),
     };
 
@@ -517,6 +590,14 @@ fn gen_openapi_property(field_name_str: &str, kind: &FieldKind, attrs: &FieldAtt
     if let Some(max_f) = attrs.max_f64 {
         constraint_stmts.push(quote! {
             prop.insert("maximum".to_string(), serde_json::json!(#max_f));
+        });
+    }
+    if let Some(ref values) = attrs.one_of {
+        let vals: Vec<&str> = values.iter().map(|v| v.as_str()).collect();
+        constraint_stmts.push(quote! {
+            prop.insert("enum".to_string(), serde_json::Value::Array(
+                vec![#(serde_json::Value::String(#vals.to_string())),*]
+            ));
         });
     }
 
@@ -630,6 +711,20 @@ fn parse_field_attrs(field: &syn::Field) -> FieldAttrs {
                 Some("pii") => {
                     attrs.pii = true;
                 }
+                Some("one_of") => {
+                    let value = meta.value()?;
+                    let content;
+                    syn::bracketed!(content in value);
+                    let mut values = Vec::new();
+                    while !content.is_empty() {
+                        let lit: syn::LitStr = content.parse()?;
+                        values.push(lit.value());
+                        if content.peek(syn::Token![,]) {
+                            content.parse::<syn::Token![,]>()?;
+                        }
+                    }
+                    attrs.one_of = Some(values);
+                }
                 Some("sanitize") => {
                     meta.parse_nested_meta(|nested| {
                         let nested_ident = nested.path.get_ident().map(|i| i.to_string());
@@ -670,7 +765,13 @@ fn classify_type(ty: &Type) -> FieldKind {
                     "i64" => FieldKind::OptionI64,
                     "f64" => FieldKind::OptionF64,
                     "bool" => FieldKind::OptionBool,
-                    _ => FieldKind::Other,
+                    _ => {
+                        if !inner.contains('<') {
+                            FieldKind::OptionNestedStruct
+                        } else {
+                            FieldKind::Other
+                        }
+                    }
                 }
             } else if type_str.starts_with("Vec<") {
                 let inner = &type_str[4..type_str.len() - 1];
@@ -680,8 +781,16 @@ fn classify_type(ty: &Type) -> FieldKind {
                     "i64" => FieldKind::VecI64,
                     "f64" => FieldKind::VecF64,
                     "bool" => FieldKind::VecBool,
-                    _ => FieldKind::Other,
+                    _ => {
+                        if !inner.contains('<') {
+                            FieldKind::VecNestedStruct
+                        } else {
+                            FieldKind::Other
+                        }
+                    }
                 }
+            } else if !type_str.contains('<') {
+                FieldKind::NestedStruct
             } else {
                 FieldKind::Other
             }

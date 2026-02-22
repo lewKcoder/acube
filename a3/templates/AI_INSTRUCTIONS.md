@@ -83,10 +83,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
    - `#[a3_authorize(scopes = ["scope:name"])]` — requires specific scopes
    - `#[a3_authorize(role = "admin")]` — requires a specific role
    - `#[a3_authorize(authenticated)]` — requires any valid JWT (no scopes/role check)
+   - `#[a3_authorize(custom = "fn_name")]` — calls a custom async function for authorization
    - `#[a3_authorize(public)]` — no authorization (must pair with `#[a3_security(none)]`)
 
 3. **Consistency rules** (compile errors if violated):
-   - `#[a3_security(none)]` + `#[a3_authorize(scopes/role/authenticated)]` → error
+   - `#[a3_security(none)]` + `#[a3_authorize(scopes/role/authenticated/custom)]` → error
    - `#[a3_security(jwt)]` + `#[a3_authorize(public)]` → error
 
 4. **Rate limiting is automatic** — default 100/min per endpoint.
@@ -140,9 +141,50 @@ async fn delete_memo(ctx: A3Context) -> A3Result<NoContent, MemoError> {
 }
 ```
 
+### Custom Authorization Hook
+
+For reusable resource-based authorization (e.g., ownership checks), use `#[a3_authorize(custom = "fn_name")]`:
+
+```rust
+async fn check_owner(ctx: &A3Context) -> Result<(), A3AuthError> {
+    let image_id: String = ctx.path("id");
+    let pool = ctx.state::<SqlitePool>();
+    let user_id = ctx.user_id();
+
+    let owner = sqlx::query_scalar::<_, String>(
+        "SELECT user_id FROM images WHERE id = ?"
+    )
+    .bind(&image_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|_| A3AuthError::Forbidden("Internal error".into()))?
+    .ok_or(A3AuthError::Forbidden("Not found".into()))?;
+
+    if owner != user_id {
+        return Err(A3AuthError::Forbidden("Not the owner".into()));
+    }
+    Ok(())
+}
+
+#[a3_endpoint(DELETE "/images/:id")]
+#[a3_security(jwt)]
+#[a3_authorize(custom = "check_owner")]
+async fn delete_image(ctx: A3Context) -> A3Result<NoContent, ImageError> {
+    // Only reaches here if check_owner returned Ok(())
+    // ... delete logic
+}
+```
+
+- The custom function signature must be `async fn(ctx: &A3Context) -> Result<(), A3AuthError>`
+- `A3AuthError::Forbidden(msg)` returns a structured 403 response
+- JWT is validated first (middleware layer), then the custom function runs
+- `#[a3_security(none)]` + `#[a3_authorize(custom = "...")]` is a compile error
+
 When to use which:
+
 - `role = "admin"` / `scopes = [...]` — same permissions for all resources (global admin, API key scopes)
-- `authenticated` + handler check — permissions vary per resource (teams, projects, organizations)
+- `custom = "fn_name"` — reusable per-resource authorization (ownership, team membership)
+- `authenticated` + handler check — inline one-off authorization logic
 
 ## What a3 does automatically
 
@@ -170,6 +212,7 @@ When to use which:
 #[a3(sanitize(lowercase))]   // Convert to lowercase
 #[a3(sanitize(strip_html))]  // Remove HTML tags
 #[a3(pii)]                   // Mark as PII (metadata only)
+#[a3(one_of = ["a", "b"])]  // Allowed values (enum validation)
 ```
 
 ### Field Types
@@ -186,6 +229,44 @@ pub is_active: bool,
 // Vec<T> — element-level validation is not supported;
 // validate individual elements in your handler if needed
 pub tags: Vec<String>,
+
+// Nested A3Schema structs — recursively validated
+pub exif: ExifInput,           // always validated
+pub exif_opt: Option<ExifInput>, // validated when Some
+pub items: Vec<TagInput>,      // each element validated
+```
+
+### Nested Struct Validation
+
+Fields typed as another `A3Schema` struct are recursively validated. Error field paths are prefixed (e.g., `"exif.iso"`, `"items[0].name"`).
+
+```rust
+#[derive(A3Schema, Debug, Deserialize)]
+pub struct ExifInput {
+    #[a3(max = 102400)]
+    pub iso: Option<i32>,
+}
+
+#[derive(A3Schema, Debug, Deserialize)]
+pub struct CreateImageInput {
+    #[a3(min_length = 1)]
+    pub title: String,
+    pub exif: ExifInput,             // recursively validated
+    pub exif_opt: Option<ExifInput>, // validated when Some
+    pub tags: Vec<TagInput>,         // each element validated
+}
+```
+
+### `one_of` Validation
+
+Restrict a string field to a set of allowed values:
+
+```rust
+#[a3(one_of = ["draft", "published", "archived"])]
+pub status: String,
+
+#[a3(one_of = ["active", "inactive"])]
+pub state: Option<String>,  // None skips check, Some validates
 ```
 
 ## Error Attributes

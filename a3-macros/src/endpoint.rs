@@ -16,6 +16,7 @@ enum Authorization {
     Authenticated,
     Scopes(Vec<String>),
     Role(String),
+    Custom(String),
 }
 
 /// Parsed rate limit declaration.
@@ -80,6 +81,13 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream, syn::
                  Use #[a3_security(jwt)] for authenticated endpoints.",
             ));
         }
+        (Security::None, Authorization::Custom(_)) => {
+            return Err(syn::Error::new_spanned(
+                &func.sig.ident,
+                "Cannot use #[a3_authorize(custom = \"...\")] with #[a3_security(none)]. \
+                 Custom authorization requires #[a3_security(jwt)].",
+            ));
+        }
         (Security::Jwt, Authorization::Public) => {
             return Err(syn::Error::new_spanned(
                 &func.sig.ident,
@@ -109,9 +117,50 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream, syn::
     let fn_vis = func.vis.clone();
     let handler_name = format_ident!("__a3_impl_{}", fn_name);
 
-    // Rename the original function to the handler name
     let mut handler_fn = func;
-    handler_fn.sig.ident = handler_name.clone();
+
+    // For custom auth, rename to __a3_inner_ and generate a wrapper __a3_impl_
+    // For regular auth, rename to __a3_impl_ directly
+    let custom_wrapper = if let Authorization::Custom(ref func_name) = authorization {
+        let custom_fn = format_ident!("{}", func_name);
+        let inner_name = format_ident!("__a3_inner_{}", fn_name);
+        handler_fn.sig.ident = inner_name.clone();
+
+        // Build wrapper params and forward args
+        let mut wrapper_params = Vec::new();
+        let mut forward_args = Vec::new();
+        let mut ctx_arg = None;
+
+        for (i, arg) in handler_fn.sig.inputs.iter().enumerate() {
+            if let syn::FnArg::Typed(pt) = arg {
+                let ty = &pt.ty;
+                let arg_name = format_ident!("__a3_param_{}", i);
+                wrapper_params.push(quote! { #arg_name: #ty });
+                forward_args.push(quote! { #arg_name });
+                if i == 0 {
+                    ctx_arg = Some(arg_name);
+                }
+            }
+        }
+
+        let ctx_arg = ctx_arg.expect("endpoint must have at least one parameter (A3Context)");
+
+        quote! {
+            async fn #handler_name(#(#wrapper_params),*) -> ::axum::response::Response {
+                use ::axum::response::IntoResponse;
+                if let Err(__a3_auth_err) = #custom_fn(&#ctx_arg).await {
+                    return __a3_auth_err.into_response();
+                }
+                match #inner_name(#(#forward_args),*).await {
+                    Ok(__a3_ok) => __a3_ok.into_response(),
+                    Err(__a3_err) => __a3_err.into_response(),
+                }
+            }
+        }
+    } else {
+        handler_fn.sig.ident = handler_name.clone();
+        quote! {}
+    };
 
     // Generate the HttpMethod variant
     let method_variant = match method_ident.to_string().as_str() {
@@ -157,6 +206,10 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream, syn::
         Authorization::Role(role) => {
             quote! { a3::types::EndpointAuthorization::Role(#role.to_string()) }
         }
+        Authorization::Custom(_) => {
+            // Custom auth is checked in the handler wrapper; middleware just verifies JWT
+            quote! { a3::types::EndpointAuthorization::Authenticated }
+        }
     };
 
     // Generate rate limit expression
@@ -200,6 +253,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream, syn::
 
     Ok(quote! {
         #handler_fn
+
+        #custom_wrapper
 
         /// Create an endpoint registration for this handler.
         #fn_vis fn #fn_name() -> a3::runtime::EndpointRegistration {
@@ -440,10 +495,15 @@ fn parse_authorize(attr: &Attribute) -> Result<Authorization, syn::Error> {
                 let role: syn::LitStr = input.parse()?;
                 Ok(Authorization::Role(role.value()))
             }
+            "custom" => {
+                input.parse::<syn::Token![=]>()?;
+                let func: syn::LitStr = input.parse()?;
+                Ok(Authorization::Custom(func.value()))
+            }
             other => Err(syn::Error::new(
                 ident.span(),
                 format!(
-                    "Expected 'public', 'authenticated', 'scopes', or 'role', found '{}'",
+                    "Expected 'public', 'authenticated', 'scopes', 'role', or 'custom', found '{}'",
                     other
                 ),
             )),

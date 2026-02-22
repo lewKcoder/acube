@@ -25,7 +25,7 @@ pub use uuid;
 
 /// Prelude for convenient imports.
 pub mod prelude {
-    pub use crate::error::{A3ErrorInfo, A3FrameworkError, OpenApiErrorVariant};
+    pub use crate::error::{A3AuthError, A3ErrorInfo, A3FrameworkError, OpenApiErrorVariant};
     pub use crate::extract::{A3Context, Valid};
     pub use crate::rate_limit::{
         InMemoryBackend, RateLimitBackend, RateLimitOutcome, RateLimitRejection,
