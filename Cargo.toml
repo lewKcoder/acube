@@ -1,5 +1,5 @@
 [workspace]
-members = ["a3", "a3-macros", "cargo-a3"]
+members = ["a3", "a3-macros", "cargo-a3", "benchmarks/performance"]
 exclude = ["todo-app/backend"]
 resolver = "2"
 

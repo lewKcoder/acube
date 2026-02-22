@@ -39,6 +39,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "a3-performance-bench"
+version = "0.1.0"
+dependencies = [
+ "a3",
+ "axum",
+ "chrono",
+ "jsonwebtoken",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
