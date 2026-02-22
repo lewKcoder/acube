@@ -52,6 +52,12 @@ struct TagsInput {
 }
 
 #[derive(A3Schema, Debug, Deserialize)]
+struct UrlInput {
+    #[a3(format = "url")]
+    pub link: String,
+}
+
+#[derive(A3Schema, Debug, Deserialize)]
 struct UuidInput {
     #[a3(format = "uuid")]
     pub id: String,
@@ -390,4 +396,99 @@ fn schema_info_optional_not_required() {
 fn schema_info_required_field() {
     let info = UsernameInput::schema_info();
     assert!(info.fields[0].required);
+}
+
+// ─── URL format validation ──────────────────────────────────────────────────
+
+#[test]
+fn url_https_valid() {
+    let mut input = UrlInput {
+        link: "https://example.com".to_string(),
+    };
+    assert!(input.validate().is_ok());
+}
+
+#[test]
+fn url_http_valid() {
+    let mut input = UrlInput {
+        link: "http://example.com".to_string(),
+    };
+    assert!(input.validate().is_ok());
+}
+
+#[test]
+fn url_with_path_valid() {
+    let mut input = UrlInput {
+        link: "https://example.com/path/to/page".to_string(),
+    };
+    assert!(input.validate().is_ok());
+}
+
+#[test]
+fn url_with_query_valid() {
+    let mut input = UrlInput {
+        link: "https://example.com/search?q=rust&page=1".to_string(),
+    };
+    assert!(input.validate().is_ok());
+}
+
+#[test]
+fn url_with_port_valid() {
+    let mut input = UrlInput {
+        link: "http://localhost:3000/api".to_string(),
+    };
+    assert!(input.validate().is_ok());
+}
+
+#[test]
+fn url_subdomain_valid() {
+    let mut input = UrlInput {
+        link: "https://docs.rs/a3/latest".to_string(),
+    };
+    assert!(input.validate().is_ok());
+}
+
+#[test]
+fn url_no_scheme_invalid() {
+    let mut input = UrlInput {
+        link: "example.com".to_string(),
+    };
+    let err = input.validate().unwrap_err();
+    assert_eq!(err[0].code, "format");
+}
+
+#[test]
+fn url_ftp_invalid() {
+    let mut input = UrlInput {
+        link: "ftp://example.com".to_string(),
+    };
+    let err = input.validate().unwrap_err();
+    assert_eq!(err[0].code, "format");
+}
+
+#[test]
+fn url_empty_invalid() {
+    let mut input = UrlInput {
+        link: "".to_string(),
+    };
+    let err = input.validate().unwrap_err();
+    assert_eq!(err[0].code, "format");
+}
+
+#[test]
+fn url_just_scheme_invalid() {
+    let mut input = UrlInput {
+        link: "https://".to_string(),
+    };
+    let err = input.validate().unwrap_err();
+    assert_eq!(err[0].code, "format");
+}
+
+#[test]
+fn url_random_string_invalid() {
+    let mut input = UrlInput {
+        link: "not a url at all".to_string(),
+    };
+    let err = input.validate().unwrap_err();
+    assert_eq!(err[0].code, "format");
 }

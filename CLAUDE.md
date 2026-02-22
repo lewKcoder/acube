@@ -120,6 +120,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[a3(max_length = N)]        // String max length
 #[a3(pattern = "regex")]     // Regex pattern match
 #[a3(format = "email")]      // Email format validation
+#[a3(format = "url")]        // URL format validation (http/https)
 #[a3(format = "uuid")]       // UUID format validation
 #[a3(min = N)]               // Numeric minimum
 #[a3(max = N)]               // Numeric maximum
@@ -127,6 +128,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[a3(sanitize(lowercase))]   // Convert to lowercase
 #[a3(sanitize(strip_html))]  // Remove HTML tags
 #[a3(pii)]                   // Mark as PII (metadata only)
+```
+
+### Field Types
+
+```rust
+// Option<T> — None skips validation, Some(v) validates v
+#[a3(max_length = 1000)]
+#[a3(sanitize(strip_html))]
+pub description: Option<String>,
+
+// bool — no validation attributes needed, works as-is
+pub is_active: bool,
+
+// Vec<T> — element-level validation is not supported;
+// validate individual elements in your handler if needed
+pub tags: Vec<String>,
 ```
 
 ## Error Attributes
@@ -254,6 +271,42 @@ async fn update_item(
     // update item...
     Ok(Json(item))
 }
+```
+
+### Query Parameters
+
+Use `axum::extract::Query<T>` as an additional handler parameter:
+
+```rust
+#[derive(Deserialize)]
+pub struct ListParams {
+    pub page: Option<u32>,
+    pub per_page: Option<u32>,
+}
+
+#[a3_endpoint(GET "/items")]
+#[a3_security(jwt)]
+#[a3_authorize(authenticated)]
+async fn list_items(
+    ctx: A3Context,
+    axum::extract::Query(params): axum::extract::Query<ListParams>,
+) -> A3Result<Json<ItemList>, ItemError> {
+    let pool = ctx.state::<SqlitePool>();
+    let page = params.page.unwrap_or(1);
+    // ...
+}
+```
+
+### Endpoint Registration Order
+
+When two routes can match the same path, register the more specific one first:
+
+```rust
+// /items/search must come before /items/:id
+// otherwise "search" matches as an :id value
+Service::builder()
+    .endpoint(search_items())   // GET /items/search — first
+    .endpoint(get_item())       // GET /items/:id    — second
 ```
 
 ## AuthIdentity

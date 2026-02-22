@@ -20,7 +20,7 @@ mod schema;
 /// - `#[a3(min = N)]` — Minimum numeric value
 /// - `#[a3(max = N)]` — Maximum numeric value
 /// - `#[a3(pattern = "regex")]` — Regex pattern match
-/// - `#[a3(format = "email"|"uuid")]` — Format validation
+/// - `#[a3(format = "email"|"url"|"uuid")]` — Format validation
 /// - `#[a3(sanitize(trim, lowercase, strip_html))]` — Input sanitization
 /// - `#[a3(pii)]` — Mark field as personally identifiable information
 #[proc_macro_derive(A3Schema, attributes(a3))]

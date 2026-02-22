@@ -55,6 +55,7 @@ edition = "2021"
 [dependencies]
 a3 = "0.1.0"
 axum = "0.7"
+serde = {{ version = "1", features = ["derive"] }}
 tokio = {{ version = "1", features = ["full"] }}
 "#
     );

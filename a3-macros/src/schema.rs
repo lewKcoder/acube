@@ -267,6 +267,7 @@ fn gen_string_validation(
     if let Some(ref fmt) = attrs.format {
         let validator = match fmt.as_str() {
             "email" => quote! { a3::schema::validate_email(val) },
+            "url" => quote! { a3::schema::validate_url(val) },
             "uuid" => quote! { a3::schema::validate_uuid(val) },
             other => {
                 let msg = format!("Unsupported format: {}", other);

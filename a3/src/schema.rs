@@ -95,6 +95,15 @@ pub fn validate_email(s: &str) -> bool {
     EMAIL_RE.is_match(s)
 }
 
+/// Validate URL format (http or https, practical check — not full RFC 3986).
+pub fn validate_url(s: &str) -> bool {
+    static URL_RE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"^https?://[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?)*(:\d+)?(/[^\s]*)?$")
+            .unwrap()
+    });
+    URL_RE.is_match(s)
+}
+
 /// Validate UUID format (v4 or any version, with hyphens).
 pub fn validate_uuid(s: &str) -> bool {
     static UUID_RE: LazyLock<Regex> = LazyLock::new(|| {
