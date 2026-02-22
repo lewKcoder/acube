@@ -206,8 +206,8 @@ When to use which:
 #[a3(format = "email")]      // Email format validation
 #[a3(format = "url")]        // URL format validation (http/https)
 #[a3(format = "uuid")]       // UUID format validation
-#[a3(min = N)]               // Numeric minimum
-#[a3(max = N)]               // Numeric maximum
+#[a3(min = N)]               // Numeric minimum (i32, i64, f64)
+#[a3(max = N)]               // Numeric maximum (i32, i64, f64)
 #[a3(sanitize(trim))]        // Trim whitespace
 #[a3(sanitize(lowercase))]   // Convert to lowercase
 #[a3(sanitize(strip_html))]  // Remove HTML tags
@@ -267,6 +267,21 @@ pub status: String,
 
 #[a3(one_of = ["active", "inactive"])]
 pub state: Option<String>,  // None skips check, Some validates
+```
+
+### Option<数値型> のバリデーション
+
+Option<T> に min/max を付けた場合、None はスキップ、Some なら検証されます:
+
+```rust
+#[derive(A3Schema, Debug, Deserialize)]
+pub struct ExifInput {
+    #[a3(min = 50, max = 102400)]
+    pub iso: Option<i32>,       // None → OK、Some(100) → OK、Some(999999) → エラー
+
+    #[a3(min = 0.0)]
+    pub focal_length: Option<f64>,  // f64 の min/max もサポート
+}
 ```
 
 ## Error Attributes
@@ -421,6 +436,48 @@ async fn list_items(
 }
 ```
 
+### ページネーション（カーソルベース推奨）
+
+```rust
+#[derive(Deserialize)]
+pub struct ListParams {
+    pub cursor: Option<String>,  // 前回最後のID
+    pub limit: Option<i64>,      // デフォルト20、最大100
+}
+
+#[a3_endpoint(GET "/items")]
+#[a3_security(jwt)]
+#[a3_authorize(authenticated)]
+async fn list_items(
+    ctx: A3Context,
+    Query(params): Query<ListParams>,
+) -> A3Result<Json<ListResponse>, ItemError> {
+    let pool = ctx.state::<SqlitePool>();
+    let user_id = ctx.user_id();
+    let limit = params.limit.unwrap_or(20).min(100);
+    let fetch_limit = limit + 1; // 1つ多く取得して has_more を判定
+
+    let items = match &params.cursor {
+        Some(cursor) => {
+            sqlx::query_as("SELECT * FROM items WHERE user_id = ? AND id < ? ORDER BY id DESC LIMIT ?")
+                .bind(user_id).bind(cursor).bind(fetch_limit)
+                .fetch_all(pool).await
+        }
+        None => {
+            sqlx::query_as("SELECT * FROM items WHERE user_id = ? ORDER BY id DESC LIMIT ?")
+                .bind(user_id).bind(fetch_limit)
+                .fetch_all(pool).await
+        }
+    }.map_err(|_| ItemError::Internal)?;
+
+    let has_more = items.len() as i64 > limit;
+    let items: Vec<_> = items.into_iter().take(limit as usize).collect();
+    let next_cursor = if has_more { items.last().map(|i| i.id.clone()) } else { None };
+
+    Ok(Json(ListResponse { items, next_cursor, has_more }))
+}
+```
+
 ### Endpoint Registration Order
 
 When two routes can match the same path, register the more specific one first:
@@ -486,6 +543,48 @@ let token = encode(
 - `JwtClaims.iat: Option<u64>` — issued-at time (Unix timestamp)
 
 `ScopeClaim` wraps `Vec<String>` and deserializes from either a JSON array `["a", "b"]` or comma-separated string `"a,b"`.
+
+## 所有権チェック（リソースの所有者確認）
+
+複数のエンドポイントで「自分のリソースのみ操作可能」を実装する場合、
+ヘルパー関数を定義して繰り返しを減らしてください:
+
+```rust
+async fn verify_owner(
+    pool: &SqlitePool,
+    table: &str,
+    id: &str,
+    user_id: &str,
+) -> Result<(), ItemError> {
+    let query = format!("SELECT user_id FROM {} WHERE id = ?", table);
+    let owner: Option<String> = sqlx::query_scalar(&query)
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|_| ItemError::Internal)?
+        .ok_or(ItemError::NotFound)?;  // 存在しない → 404
+
+    if owner != user_id {
+        return Err(ItemError::NotFound);  // 他人のリソース → 404（403ではなく）
+    }
+    Ok(())
+}
+
+// 使用例
+async fn delete_item(ctx: A3Context) -> A3Result<NoContent, ItemError> {
+    let pool = ctx.state::<SqlitePool>();
+    let user_id = ctx.user_id();
+    let id: String = ctx.path("id");
+
+    verify_owner(pool, "items", &id, user_id).await?;
+    sqlx::query("DELETE FROM items WHERE id = ?").bind(&id).execute(pool).await
+        .map_err(|_| ItemError::Internal)?;
+    Ok(NoContent)
+}
+```
+
+注意: 他人のリソースには 403 (Forbidden) ではなく 404 (Not Found) を返してください。
+403 はリソースの存在を攻撃者に漏らします。
 
 ## Environment Variables
 
