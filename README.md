@@ -63,8 +63,8 @@ Then run `cargo acube init` to generate AI instruction files for your editor.
 | Feature                 | Without acube                      | With acube                                                |
 | ----------------------- | ---------------------------------- | --------------------------------------------------------- |
 | Security headers (7)    | You add them manually              | Auto-injected on every response                           |
-| Rate limiting           | You install middleware              | Default 100/min, opt-out with `#[acube_rate_limit(none)]` |
-| Input validation        | You call validators                | `Valid<T>` validates + sanitizes before your handler runs  |
+| Rate limiting           | You install middleware             | Default 100/min, opt-out with `#[acube_rate_limit(none)]` |
+| Input validation        | You call validators                | `Valid<T>` validates + sanitizes before your handler runs |
 | Unknown field rejection | Usually ignored                    | Strict mode always on                                     |
 | CORS                    | You configure it                   | Deny-all by default, explicit allowlist                   |
 | Error sanitization      | You hope you didn't leak internals | Internal details never reach the client                   |
