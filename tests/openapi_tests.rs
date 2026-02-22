@@ -202,7 +202,10 @@ fn openapi_responses_codes() {
 #[test]
 fn openapi_responses_retryable() {
     let responses = OpenApiTestError::openapi_responses();
-    let backend = responses.iter().find(|r| r.code == "backend_error").unwrap();
+    let backend = responses
+        .iter()
+        .find(|r| r.code == "backend_error")
+        .unwrap();
     assert!(backend.retryable);
     let not_found = responses.iter().find(|r| r.code == "not_found").unwrap();
     assert!(!not_found.retryable);
@@ -237,7 +240,10 @@ fn openapi_json_has_info() {
     let json: serde_json::Value = serde_json::from_str(&service.openapi_json()).unwrap();
     assert_eq!(json["info"]["title"], "test-api");
     assert_eq!(json["info"]["version"], "1.0.0");
-    assert_eq!(json["info"]["description"], "Test API for OpenAPI generation");
+    assert_eq!(
+        json["info"]["description"],
+        "Test API for OpenAPI generation"
+    );
 }
 
 #[test]

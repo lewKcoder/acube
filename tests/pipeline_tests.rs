@@ -433,11 +433,19 @@ async fn rate_limit_success_includes_limit_headers() {
 
     // Successful response should include rate limit headers
     assert_eq!(
-        resp.headers().get("x-ratelimit-limit").unwrap().to_str().unwrap(),
+        resp.headers()
+            .get("x-ratelimit-limit")
+            .unwrap()
+            .to_str()
+            .unwrap(),
         "2"
     );
     assert_eq!(
-        resp.headers().get("x-ratelimit-remaining").unwrap().to_str().unwrap(),
+        resp.headers()
+            .get("x-ratelimit-remaining")
+            .unwrap()
+            .to_str()
+            .unwrap(),
         "1"
     );
     assert!(resp.headers().get("x-ratelimit-reset").is_some());
@@ -456,7 +464,11 @@ async fn rate_limit_remaining_decrements() {
         .unwrap();
     let resp = router.clone().oneshot(req).await.unwrap();
     assert_eq!(
-        resp.headers().get("x-ratelimit-remaining").unwrap().to_str().unwrap(),
+        resp.headers()
+            .get("x-ratelimit-remaining")
+            .unwrap()
+            .to_str()
+            .unwrap(),
         "1"
     );
 
@@ -469,7 +481,11 @@ async fn rate_limit_remaining_decrements() {
     let resp = router.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(
-        resp.headers().get("x-ratelimit-remaining").unwrap().to_str().unwrap(),
+        resp.headers()
+            .get("x-ratelimit-remaining")
+            .unwrap()
+            .to_str()
+            .unwrap(),
         "0"
     );
 }
@@ -497,11 +513,19 @@ async fn rate_limit_429_includes_limit_headers() {
     let resp = router.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
     assert_eq!(
-        resp.headers().get("x-ratelimit-limit").unwrap().to_str().unwrap(),
+        resp.headers()
+            .get("x-ratelimit-limit")
+            .unwrap()
+            .to_str()
+            .unwrap(),
         "2"
     );
     assert_eq!(
-        resp.headers().get("x-ratelimit-remaining").unwrap().to_str().unwrap(),
+        resp.headers()
+            .get("x-ratelimit-remaining")
+            .unwrap()
+            .to_str()
+            .unwrap(),
         "0"
     );
 }
@@ -752,8 +776,14 @@ async fn ctx_path_and_body(
 
 fn build_ctx_service() -> acube::runtime::Service {
     let store: TestStore = Arc::new(Mutex::new(HashMap::new()));
-    store.lock().unwrap().insert("a".to_string(), "1".to_string());
-    store.lock().unwrap().insert("b".to_string(), "2".to_string());
+    store
+        .lock()
+        .unwrap()
+        .insert("a".to_string(), "1".to_string());
+    store
+        .lock()
+        .unwrap()
+        .insert("b".to_string(), "2".to_string());
 
     Service::builder()
         .name("ctx-test")
@@ -867,7 +897,9 @@ enum CustomAuthError {
 #[acube_security(jwt)]
 #[acube_authorize(custom = "check_owner")]
 #[acube_rate_limit(none)]
-async fn custom_auth_endpoint(ctx: AcubeContext) -> AcubeResult<Json<serde_json::Value>, CustomAuthError> {
+async fn custom_auth_endpoint(
+    ctx: AcubeContext,
+) -> AcubeResult<Json<serde_json::Value>, CustomAuthError> {
     let id: String = ctx.path("id");
     Ok(Json(serde_json::json!({"id": id})))
 }

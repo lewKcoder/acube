@@ -1,4 +1,9 @@
 [package]
 name = "cargo-acube"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "CLI tool for the acube security framework"
+repository = "https://github.com/lewKcoder/acube"
+keywords = ["web", "security", "framework", "ai", "cli"]
+categories = ["command-line-utilities", "development-tools"]

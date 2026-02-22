@@ -53,13 +53,19 @@ pub fn expand(input: &DeriveInput) -> TokenStream {
         Data::Struct(data) => match &data.fields {
             Fields::Named(named) => &named.named,
             _ => {
-                return syn::Error::new_spanned(struct_name, "AcubeSchema only supports named fields")
-                    .to_compile_error();
+                return syn::Error::new_spanned(
+                    struct_name,
+                    "AcubeSchema only supports named fields",
+                )
+                .to_compile_error();
             }
         },
         _ => {
-            return syn::Error::new_spanned(struct_name, "AcubeSchema can only be derived on structs")
-                .to_compile_error();
+            return syn::Error::new_spanned(
+                struct_name,
+                "AcubeSchema can only be derived on structs",
+            )
+            .to_compile_error();
         }
     };
 

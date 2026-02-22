@@ -25,7 +25,9 @@ pub use uuid;
 
 /// Prelude for convenient imports.
 pub mod prelude {
-    pub use crate::error::{AcubeAuthError, AcubeErrorInfo, AcubeFrameworkError, OpenApiErrorVariant};
+    pub use crate::error::{
+        AcubeAuthError, AcubeErrorInfo, AcubeFrameworkError, OpenApiErrorVariant,
+    };
     pub use crate::extract::{AcubeContext, Valid};
     pub use crate::rate_limit::{
         InMemoryBackend, RateLimitBackend, RateLimitOutcome, RateLimitRejection,

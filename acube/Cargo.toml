@@ -3,9 +3,14 @@ name = "acube"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Security-first server framework optimized for AI code generation"
+repository = "https://github.com/lewKcoder/acube"
+readme = "../README.md"
+keywords = ["web", "security", "framework", "ai", "axum"]
+categories = ["web-programming::http-server", "development-tools"]
 
 [dependencies]
-acube-macros = { path = "../acube-macros" }
+acube-macros = { path = "../acube-macros", version = "0.1.0" }
 async-trait = "0.1"
 axum = "0.7"
 tokio = { version = "1", features = ["full"] }

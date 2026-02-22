@@ -56,7 +56,10 @@ pub fn error_response(
 }
 
 /// Build an error response from an `AcubeErrorInfo` implementor.
-pub fn into_acube_response(err: &(impl AcubeErrorInfo + std::fmt::Debug), request_id: &str) -> Response {
+pub fn into_acube_response(
+    err: &(impl AcubeErrorInfo + std::fmt::Debug),
+    request_id: &str,
+) -> Response {
     error_response(
         err.status_code(),
         err.code(),
@@ -161,14 +164,54 @@ impl AcubeErrorInfo for AcubeFrameworkError {
 
     fn openapi_responses() -> Vec<OpenApiErrorVariant> {
         vec![
-            OpenApiErrorVariant { status: 404, code: "not_found".to_string(), message: "Not found".to_string(), retryable: false },
-            OpenApiErrorVariant { status: 405, code: "method_not_allowed".to_string(), message: "Method not allowed".to_string(), retryable: false },
-            OpenApiErrorVariant { status: 413, code: "payload_too_large".to_string(), message: "Payload too large".to_string(), retryable: false },
-            OpenApiErrorVariant { status: 429, code: "rate_limit_exceeded".to_string(), message: "Rate limit exceeded".to_string(), retryable: true },
-            OpenApiErrorVariant { status: 401, code: "unauthorized".to_string(), message: "Unauthorized".to_string(), retryable: false },
-            OpenApiErrorVariant { status: 403, code: "forbidden".to_string(), message: "Forbidden".to_string(), retryable: false },
-            OpenApiErrorVariant { status: 400, code: "bad_request".to_string(), message: "Bad request".to_string(), retryable: false },
-            OpenApiErrorVariant { status: 500, code: "internal_error".to_string(), message: "Internal server error".to_string(), retryable: true },
+            OpenApiErrorVariant {
+                status: 404,
+                code: "not_found".to_string(),
+                message: "Not found".to_string(),
+                retryable: false,
+            },
+            OpenApiErrorVariant {
+                status: 405,
+                code: "method_not_allowed".to_string(),
+                message: "Method not allowed".to_string(),
+                retryable: false,
+            },
+            OpenApiErrorVariant {
+                status: 413,
+                code: "payload_too_large".to_string(),
+                message: "Payload too large".to_string(),
+                retryable: false,
+            },
+            OpenApiErrorVariant {
+                status: 429,
+                code: "rate_limit_exceeded".to_string(),
+                message: "Rate limit exceeded".to_string(),
+                retryable: true,
+            },
+            OpenApiErrorVariant {
+                status: 401,
+                code: "unauthorized".to_string(),
+                message: "Unauthorized".to_string(),
+                retryable: false,
+            },
+            OpenApiErrorVariant {
+                status: 403,
+                code: "forbidden".to_string(),
+                message: "Forbidden".to_string(),
+                retryable: false,
+            },
+            OpenApiErrorVariant {
+                status: 400,
+                code: "bad_request".to_string(),
+                message: "Bad request".to_string(),
+                retryable: false,
+            },
+            OpenApiErrorVariant {
+                status: 500,
+                code: "internal_error".to_string(),
+                message: "Internal server error".to_string(),
+                retryable: true,
+            },
         ]
     }
 }

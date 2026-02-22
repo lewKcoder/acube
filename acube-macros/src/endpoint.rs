@@ -344,7 +344,11 @@ fn parse_return_type(func: &ItemFn) -> (u16, Option<Type>, bool) {
     // Second type arg: error type
     let error_type = match iter.next() {
         Some(syn::GenericArgument::Type(ty)) => {
-            if is_never_type(ty) { None } else { Some(ty.clone()) }
+            if is_never_type(ty) {
+                None
+            } else {
+                Some(ty.clone())
+            }
         }
         _ => None,
     };
@@ -443,18 +447,16 @@ fn parse_security(attr: &Attribute) -> Result<Security, syn::Error> {
             "none" => Ok(Security::None),
             "jwt" => {
                 // Check for legacy scopes syntax and produce helpful error
-                if !input.is_empty() {
-                    if input.peek(syn::Token![,]) {
-                        let comma_span = input.parse::<syn::Token![,]>()?.span;
-                        if input.peek(syn::Ident) {
-                            let key: Ident = input.fork().parse()?;
-                            if key == "scopes" {
-                                return Err(syn::Error::new(
-                                    comma_span,
-                                    "Scopes have moved to #[acube_authorize(scopes = [...])]. \
-                                     Use #[acube_security(jwt)] for authentication only.",
-                                ));
-                            }
+                if !input.is_empty() && input.peek(syn::Token![,]) {
+                    let comma_span = input.parse::<syn::Token![,]>()?.span;
+                    if input.peek(syn::Ident) {
+                        let key: Ident = input.fork().parse()?;
+                        if key == "scopes" {
+                            return Err(syn::Error::new(
+                                comma_span,
+                                "Scopes have moved to #[acube_authorize(scopes = [...])]. \
+                                 Use #[acube_security(jwt)] for authentication only.",
+                            ));
                         }
                     }
                 }

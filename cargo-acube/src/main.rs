@@ -4,7 +4,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process;
 
-const FALLBACK_TEMPLATE: &str = include_str!("../../acube/templates/AI_INSTRUCTIONS.md");
+const FALLBACK_TEMPLATE: &str = include_str!("../templates/AI_INSTRUCTIONS.md");
 
 const AI_FILES: &[&str] = &[
     "CLAUDE.md",
@@ -70,10 +70,7 @@ fn run_new(name: &str) {
     let root = Path::new(name);
 
     // Use basename for the package name (e.g., "/tmp/my-app" → "my-app")
-    let pkg_name = root
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(name);
+    let pkg_name = root.file_name().and_then(|n| n.to_str()).unwrap_or(name);
 
     if root.exists() {
         eprintln!("Error: directory '{}' already exists", name);

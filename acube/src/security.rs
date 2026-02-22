@@ -176,8 +176,8 @@ impl JwtAuth {
 
     /// Create from an RSA public key in PEM format (RS256).
     pub fn from_rsa_pem(pem: &[u8]) -> Result<Self, JwtAuthError> {
-        let decoding_key = DecodingKey::from_rsa_pem(pem)
-            .map_err(|e| JwtAuthError::InvalidKey(e.to_string()))?;
+        let decoding_key =
+            DecodingKey::from_rsa_pem(pem).map_err(|e| JwtAuthError::InvalidKey(e.to_string()))?;
         Ok(Self::with_algorithm(
             decoding_key,
             jsonwebtoken::Algorithm::RS256,
@@ -186,8 +186,8 @@ impl JwtAuth {
 
     /// Create from an EC public key in PEM format (ES256).
     pub fn from_ec_pem(pem: &[u8]) -> Result<Self, JwtAuthError> {
-        let decoding_key = DecodingKey::from_ec_pem(pem)
-            .map_err(|e| JwtAuthError::InvalidKey(e.to_string()))?;
+        let decoding_key =
+            DecodingKey::from_ec_pem(pem).map_err(|e| JwtAuthError::InvalidKey(e.to_string()))?;
         Ok(Self::with_algorithm(
             decoding_key,
             jsonwebtoken::Algorithm::ES256,

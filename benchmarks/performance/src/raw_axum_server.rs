@@ -18,9 +18,7 @@ async fn health_check() -> Json<HealthResponse> {
 async fn main() {
     let app = Router::new().route("/health", get(health_check));
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3001")
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3001").await.unwrap();
     eprintln!("raw_axum_server listening on 0.0.0.0:3001");
     axum::serve(listener, app).await.unwrap();
 }

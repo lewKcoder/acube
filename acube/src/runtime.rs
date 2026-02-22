@@ -116,11 +116,13 @@ pub struct EndpointRegistration {
     pub openapi: Option<EndpointOpenApi>,
 }
 
-/// Builder for constructing an acube `Service`.
 /// Default Content-Security-Policy value.
 const DEFAULT_CSP: &str = "default-src 'none'; frame-ancestors 'none'";
 
-/// Builder for constructing an acube `Service`.
+/// Builder for constructing an acube [`Service`].
+///
+/// Created via [`Service::builder()`]. Validates configuration at build time
+/// and returns errors for missing required fields or inconsistent settings.
 pub struct ServiceBuilder {
     name: Option<String>,
     version: Option<String>,
@@ -531,17 +533,16 @@ impl Service {
                 });
             }
 
-            operation
-                .insert("responses".to_string(), serde_json::Value::Object(responses));
+            operation.insert(
+                "responses".to_string(),
+                serde_json::Value::Object(responses),
+            );
 
             let path_item = paths
                 .entry(openapi_path)
                 .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
             if let serde_json::Value::Object(ref mut map) = path_item {
-                map.insert(
-                    method_str.to_string(),
-                    serde_json::Value::Object(operation),
-                );
+                map.insert(method_str.to_string(), serde_json::Value::Object(operation));
             }
         }
 
@@ -1048,10 +1049,7 @@ where
 // ─── Rate Limit Headers ──────────────────────────────────────────────────────
 
 /// Inject standard rate limit headers into a successful response.
-fn inject_rate_limit_headers(
-    headers: &mut axum::http::HeaderMap,
-    outcome: &RateLimitOutcome,
-) {
+fn inject_rate_limit_headers(headers: &mut axum::http::HeaderMap, outcome: &RateLimitOutcome) {
     if let Ok(val) = HeaderValue::from_str(&outcome.limit.to_string()) {
         headers.insert(HEADER_RATELIMIT_LIMIT.clone(), val);
     }

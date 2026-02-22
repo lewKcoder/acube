@@ -18,7 +18,10 @@ use crate::runtime::SharedState;
 use crate::schema::{check_unknown_fields, AcubeValidate, ValidationError};
 use crate::security::AuthIdentity;
 
-/// Request ID stored in request extensions by the request ID middleware.
+/// Unique request identifier (UUID v4) generated per HTTP request.
+///
+/// Injected by acube's request-ID middleware and attached to every response
+/// as the `x-request-id` header. Also embedded in structured error responses.
 #[derive(Debug, Clone)]
 pub struct RequestId(pub String);
 
