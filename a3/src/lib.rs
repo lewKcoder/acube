@@ -16,6 +16,11 @@ pub mod schema;
 pub mod security;
 pub mod types;
 
+// Re-export axum so that generated code from a3_endpoint macro can reference it
+// without requiring users to add axum as a direct dependency.
+#[doc(hidden)]
+pub use axum;
+
 /// Prelude for convenient imports.
 pub mod prelude {
     pub use crate::error::{A3ErrorInfo, A3FrameworkError};

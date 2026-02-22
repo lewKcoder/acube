@@ -70,13 +70,13 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> Result<TokenStream, syn::
         }
     };
 
-    // Generate the axum routing function
+    // Generate the axum routing function (via a3 re-export)
     let route_fn = match method_ident.to_string().as_str() {
-        "GET" => quote! { axum::routing::get },
-        "POST" => quote! { axum::routing::post },
-        "PUT" => quote! { axum::routing::put },
-        "PATCH" => quote! { axum::routing::patch },
-        "DELETE" => quote! { axum::routing::delete },
+        "GET" => quote! { a3::axum::routing::get },
+        "POST" => quote! { a3::axum::routing::post },
+        "PUT" => quote! { a3::axum::routing::put },
+        "PATCH" => quote! { a3::axum::routing::patch },
+        "DELETE" => quote! { a3::axum::routing::delete },
         _ => unreachable!(),
     };
 
