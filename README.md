@@ -1,5 +1,9 @@
 # acube
 
+[![crates.io](https://img.shields.io/crates/v/acube.svg)](https://crates.io/crates/acube)
+[![docs.rs](https://docs.rs/acube/badge.svg)](https://docs.rs/acube)
+[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **Security-first server framework where forgetting security is a compile error.**
 
 AI generates working servers -- but forgets security headers, rate limiting, input sanitization, and unknown field rejection. Not because AI is bad, but because Express, FastAPI, and axum allow it.
