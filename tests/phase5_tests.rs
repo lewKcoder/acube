@@ -54,12 +54,6 @@ struct JwtTestInput {
     pub name: String,
 }
 
-#[derive(AcubeError, Debug)]
-#[allow(dead_code)]
-enum JwtTestError {
-    #[acube(status = 404, message = "Not found")]
-    NotFound,
-}
 
 #[acube_endpoint(GET "/health")]
 #[acube_security(none)]
@@ -76,7 +70,7 @@ async fn health(_ctx: AcubeContext) -> AcubeResult<Json<HealthStatus>, Never> {
 async fn create_item(
     _ctx: AcubeContext,
     input: Valid<JwtTestInput>,
-) -> AcubeResult<Created<serde_json::Value>, JwtTestError> {
+) -> AcubeResult<Created<serde_json::Value>, Never> {
     let input = input.into_inner();
     Ok(Created(serde_json::json!({"name": input.name})))
 }
@@ -88,7 +82,7 @@ async fn create_item(
 async fn get_item(
     _ctx: AcubeContext,
     axum::extract::Path(id): axum::extract::Path<String>,
-) -> AcubeResult<Json<serde_json::Value>, JwtTestError> {
+) -> AcubeResult<Json<serde_json::Value>, Never> {
     Ok(Json(serde_json::json!({"id": id})))
 }
 

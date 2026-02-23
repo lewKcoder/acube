@@ -60,12 +60,6 @@ struct ItemInput {
 
 // ─── Error ───────────────────────────────────────────────────────────────────
 
-#[derive(AcubeError, Debug)]
-#[allow(dead_code)]
-enum ItemError {
-    #[acube(status = 404, message = "Item not found")]
-    NotFound,
-}
 
 // ─── Endpoints ───────────────────────────────────────────────────────────────
 
@@ -84,7 +78,7 @@ async fn health(_ctx: AcubeContext) -> AcubeResult<Json<HealthStatus>, Never> {
 async fn create_item(
     _ctx: AcubeContext,
     input: Valid<ItemInput>,
-) -> AcubeResult<Created<serde_json::Value>, ItemError> {
+) -> AcubeResult<Created<serde_json::Value>, Never> {
     let input = input.into_inner();
     Ok(Created(serde_json::json!({"name": input.name})))
 }
@@ -93,7 +87,7 @@ async fn create_item(
 #[acube_security(jwt)]
 #[acube_authorize(scopes = ["items:read"])]
 #[acube_rate_limit(none)]
-async fn get_item(ctx: AcubeContext) -> AcubeResult<Json<serde_json::Value>, ItemError> {
+async fn get_item(ctx: AcubeContext) -> AcubeResult<Json<serde_json::Value>, Never> {
     let id: String = ctx.path("id");
     Ok(Json(serde_json::json!({"id": id})))
 }
@@ -750,7 +744,7 @@ async fn ctx_state_test(ctx: AcubeContext) -> AcubeResult<Json<serde_json::Value
 #[acube_security(jwt)]
 #[acube_authorize(authenticated)]
 #[acube_rate_limit(none)]
-async fn ctx_no_content(ctx: AcubeContext) -> AcubeResult<NoContent, ItemError> {
+async fn ctx_no_content(ctx: AcubeContext) -> AcubeResult<NoContent, Never> {
     let _id: String = ctx.path("id");
     Ok(NoContent)
 }
@@ -769,7 +763,7 @@ struct UpdateInput {
 async fn ctx_path_and_body(
     ctx: AcubeContext,
     input: Valid<UpdateInput>,
-) -> AcubeResult<Json<serde_json::Value>, ItemError> {
+) -> AcubeResult<Json<serde_json::Value>, Never> {
     let id: String = ctx.path("id");
     let input = input.into_inner();
     Ok(Json(serde_json::json!({"id": id, "value": input.value})))
@@ -888,12 +882,6 @@ async fn check_owner(ctx: &AcubeContext) -> Result<(), AcubeAuthError> {
     }
 }
 
-#[derive(AcubeError, Debug)]
-#[allow(dead_code)]
-enum CustomAuthError {
-    #[acube(status = 404, message = "Not found")]
-    NotFound,
-}
 
 #[acube_endpoint(GET "/custom-auth/:id")]
 #[acube_security(jwt)]
@@ -901,7 +889,7 @@ enum CustomAuthError {
 #[acube_rate_limit(none)]
 async fn custom_auth_endpoint(
     ctx: AcubeContext,
-) -> AcubeResult<Json<serde_json::Value>, CustomAuthError> {
+) -> AcubeResult<Json<serde_json::Value>, Never> {
     let id: String = ctx.path("id");
     Ok(Json(serde_json::json!({"id": id})))
 }
@@ -923,7 +911,7 @@ async fn check_write_access(ctx: &AcubeContext) -> Result<(), AcubeAuthError> {
 async fn custom_auth_body_endpoint(
     _ctx: AcubeContext,
     input: Valid<ItemInput>,
-) -> AcubeResult<Created<serde_json::Value>, CustomAuthError> {
+) -> AcubeResult<Created<serde_json::Value>, Never> {
     let input = input.into_inner();
     Ok(Created(serde_json::json!({"name": input.name})))
 }

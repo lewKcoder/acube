@@ -52,13 +52,9 @@ struct TestInput {
 // ─── Test error ──────────────────────────────────────────────────────────────
 
 #[derive(AcubeError, Debug)]
-#[allow(dead_code)]
 enum TestError {
     #[acube(status = 404, message = "Not found")]
     NotFound,
-
-    #[acube(status = 409, message = "Already exists")]
-    AlreadyExists,
 
     #[acube(status = 502, retryable, message = "Backend unavailable")]
     BackendError,
