@@ -54,7 +54,6 @@ struct JwtTestInput {
     pub name: String,
 }
 
-
 #[acube_endpoint(GET "/health")]
 #[acube_security(none)]
 #[acube_authorize(public)]

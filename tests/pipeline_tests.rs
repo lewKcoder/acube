@@ -60,7 +60,6 @@ struct ItemInput {
 
 // ─── Error ───────────────────────────────────────────────────────────────────
 
-
 // ─── Endpoints ───────────────────────────────────────────────────────────────
 
 #[acube_endpoint(GET "/health")]
@@ -882,14 +881,11 @@ async fn check_owner(ctx: &AcubeContext) -> Result<(), AcubeAuthError> {
     }
 }
 
-
 #[acube_endpoint(GET "/custom-auth/:id")]
 #[acube_security(jwt)]
 #[acube_authorize(custom = "check_owner")]
 #[acube_rate_limit(none)]
-async fn custom_auth_endpoint(
-    ctx: AcubeContext,
-) -> AcubeResult<Json<serde_json::Value>, Never> {
+async fn custom_auth_endpoint(ctx: AcubeContext) -> AcubeResult<Json<serde_json::Value>, Never> {
     let id: String = ctx.path("id");
     Ok(Json(serde_json::json!({"id": id})))
 }
