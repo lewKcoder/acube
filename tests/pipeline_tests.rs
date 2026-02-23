@@ -61,6 +61,7 @@ struct ItemInput {
 // ─── Error ───────────────────────────────────────────────────────────────────
 
 #[derive(AcubeError, Debug)]
+#[allow(dead_code)]
 enum ItemError {
     #[acube(status = 404, message = "Item not found")]
     NotFound,
@@ -888,6 +889,7 @@ async fn check_owner(ctx: &AcubeContext) -> Result<(), AcubeAuthError> {
 }
 
 #[derive(AcubeError, Debug)]
+#[allow(dead_code)]
 enum CustomAuthError {
     #[acube(status = 404, message = "Not found")]
     NotFound,

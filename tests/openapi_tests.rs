@@ -27,6 +27,7 @@ struct OpenApiTestInput {
 }
 
 #[derive(AcubeError, Debug)]
+#[allow(dead_code)]
 enum OpenApiTestError {
     #[acube(status = 404, message = "Not found")]
     NotFound,

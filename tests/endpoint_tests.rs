@@ -52,6 +52,7 @@ struct TestInput {
 // ─── Test error ──────────────────────────────────────────────────────────────
 
 #[derive(AcubeError, Debug)]
+#[allow(dead_code)]
 enum TestError {
     #[acube(status = 404, message = "Not found")]
     NotFound,

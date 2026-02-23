@@ -55,6 +55,7 @@ struct JwtTestInput {
 }
 
 #[derive(AcubeError, Debug)]
+#[allow(dead_code)]
 enum JwtTestError {
     #[acube(status = 404, message = "Not found")]
     NotFound,

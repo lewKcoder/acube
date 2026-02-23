@@ -78,6 +78,7 @@ struct MultiFieldInput {
 }
 
 #[derive(AcubeSchema, Debug, Deserialize)]
+#[allow(dead_code)]
 struct NoAttrsInput {
     pub name: String,
     pub active: bool,
