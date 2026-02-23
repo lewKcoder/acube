@@ -16,7 +16,7 @@ axum = "0.7"
 tokio = { version = "1", features = ["full"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["set-header", "trace", "limit", "catch-panic", "cors"] }
-jsonwebtoken = "9"
+jsonwebtoken = "10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4"] }
@@ -82,4 +82,4 @@ hyper = { version = "1", features = ["full"] }
 tower = { version = "0.4", features = ["util"] }
 trybuild = "1"
 proptest = "1"
-jsonwebtoken = "9"
+jsonwebtoken = "10"
