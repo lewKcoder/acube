@@ -346,7 +346,13 @@ async fn invariant_7_validation_errors_field_names_only() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 
     let json = body_json(resp).await;
-    let body_str = serde_json::to_string(&json).unwrap();
+
+    // Serialize without request_id (UUID can coincidentally contain constraint values)
+    let mut json_without_rid = json.clone();
+    if let Some(err) = json_without_rid.get_mut("error") {
+        err.as_object_mut().unwrap().remove("request_id");
+    }
+    let body_str = serde_json::to_string(&json_without_rid).unwrap();
 
     // Field name "name" should appear (it identifies *which* field failed)
     assert!(
