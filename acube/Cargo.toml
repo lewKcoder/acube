@@ -77,6 +77,10 @@ path = "../tests/phase5_tests.rs"
 name = "openapi_tests"
 path = "../tests/openapi_tests.rs"
 
+[[test]]
+name = "design_invariants"
+path = "../tests/design_invariants.rs"
+
 [dev-dependencies]
 hyper = { version = "1", features = ["full"] }
 tower = { version = "0.4", features = ["util"] }
